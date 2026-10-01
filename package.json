@@ -1,0 +1,14 @@
+{
+  "name": "lenia-explorer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lenia: Continuous Artificial Life Explorer - a static WebGL2 application.",
+  "scripts": {
+    "start": "node tools/serve.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

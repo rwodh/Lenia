@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <meta name="color-scheme" content="dark">
+  <title>Lenia - Continuous Artificial Life Explorer</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="lenia-canvas" role="img" aria-label="Real-time Lenia simulation"></canvas>
+
+  <div id="hud" role="status" aria-live="off">
+    <h1>Lenia <span>continuous artificial life</span></h1>
+    <p data-hud="line">starting...</p>
+    <p data-hud="note" hidden></p>
+  </div>
+
+  <div id="fatal" role="alert" hidden>
+    <div class="card">
+      <h2>Lenia could not start</h2>
+      <p data-fatal="message"></p>
+      <pre data-fatal="detail" hidden></pre>
+    </div>
+  </div>
+
+  <noscript><p class="noscript">Lenia needs JavaScript and WebGL2 to run.</p></noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
