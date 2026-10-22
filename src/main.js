@@ -1,21 +1,28 @@
 import { App } from './app.js';
 import { Hud } from './ui/hud.js';
 import { showFatal } from './ui/fatal.js';
-import { normalizeParams, parseQueryParams } from './simulation/params.js';
+import { parseQueryParams } from './simulation/params.js';
+import { planStartup } from './simulation/startup.js';
 
 const canvas = document.getElementById('lenia-canvas');
 const hud = new Hud(document.getElementById('hud'));
 const fatalPanel = document.getElementById('fatal');
 
-const { params, adjustments } = normalizeParams(parseQueryParams(location.search));
-if (adjustments.length) hud.setNote(adjustments.join(' | '));
-
-const app = new App({ canvas, hud, params, onFatal: (e) => showFatal(fatalPanel, e) });
+let app = null;
 try {
+  const startup = planStartup(parseQueryParams(location.search));
+  if (startup.notes.length) hud.setNote(startup.notes.join(' | '));
+  app = new App({
+    canvas,
+    hud,
+    params: startup.params,
+    initialState: startup.initialState,
+    onFatal: (e) => showFatal(fatalPanel, e),
+  });
   app.start();
 } catch (e) {
   showFatal(fatalPanel, e);
 }
 
 // Diagnostics hook for tests, opt-in via ?debug
-if (new URLSearchParams(location.search).has('debug')) window.leniaApp = app;
+if (app && new URLSearchParams(location.search).has('debug')) window.leniaApp = app;

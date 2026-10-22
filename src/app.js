@@ -3,17 +3,18 @@ import { FrameFence } from './gl/fence.js';
 import { LOOP } from './config.js';
 import { Renderer } from './render/renderer.js';
 import { LeniaSimulation } from './simulation/lenia.js';
-import { randomDiscSeed } from './simulation/seed.js';
 
 /**
  * Owns the GPU resources and the animation loop. Parameters must already be
- * normalised. `onFatal(error)` is called once if the app cannot continue.
+ * normalised; `initialState` is the Float32Array (gridSize^2) the simulation starts from
+ * (see simulation/startup.js). `onFatal(error)` is called once if the app cannot continue.
  */
 export class App {
-  constructor({ canvas, hud, params, onFatal }) {
+  constructor({ canvas, hud, params, initialState, onFatal }) {
     this.canvas = canvas;
     this.hud = hud;
     this.params = params;
+    this.initialState = initialState;
     this.onFatal = onFatal;
 
     this.sim = null;
@@ -59,7 +60,7 @@ export class App {
     this.fence = new FrameFence(gl, LOOP.maxFramesInFlight);
     this.renderer = new Renderer(gl, this.canvas, caps);
     this.sim = new LeniaSimulation(gl, caps, this.params);
-    this.sim.reset(randomDiscSeed(this.params.gridSize, { radiusFraction: 0.2, seed: this.params.seed }));
+    this.sim.reset(this.initialState);
     this.handleResize();
   }
 
