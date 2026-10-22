@@ -13,7 +13,10 @@ npm start        # http://localhost:8080/   (PORT=9000 npm start to change)
 npm test         # unit tests (node:test, no dependencies)
 ```
 
-Browser GPU checks: open `http://localhost:8080/tests/browser/gpu-parity.html`; the last line must read `ALL PASS`.
+Browser GPU checks (the last line of each must read `ALL PASS`):
+- `http://localhost:8080/tests/browser/gpu-parity.html` - GPU shaders vs the CPU reference, colour map, shader-error reporting.
+- `http://localhost:8080/tests/browser/orbium-gpu.html` - the verified Orbium organism on the GPU: parity after 1/5/20 steps,
+  a long run (`?long=1000`), observable parity with the CPU, and grid-size independence. Takes about a minute on a software GPU.
 
 URL options (validated and clamped; see `src/simulation/params.js`):
 `?grid=64|128|256|512`  `?radius=3..24`  `?seed=<integer>`  `?debug` (exposes `window.leniaApp`).
@@ -28,10 +31,12 @@ src/config.js               limits and defaults
 src/gl/                     context + capability probe, program compile/link, textures/FBOs, frame fence
 src/shaders/                GLSL ES 3.00 as JS string modules (no fetch, no bundler)
 src/simulation/             kernel/growth math, params validation, seeds, CPU reference  (pure JS, Node-testable)
+                            patterns.js = verified upstream organism data (Orbium O2u); rle.js = strict decoder for it
                             lenia.js = GPU simulation (ping-pong R32F textures, one fragment pass per step)
 src/render/renderer.js      display pass (colour map, smooth magnification) + drawing-buffer sizing
 src/ui/                     HUD and fatal-error panel (textContent only)
-tests/unit/                 Node tests for the pure modules
+tests/unit/                 Node tests for the pure modules (incl. decoder, pattern provenance, placement)
+tests/fixtures/             reference decode of O2u produced by the literal upstream decoder
 tests/browser/              in-browser GPU-vs-CPU parity check
 tools/serve.js              zero-dependency localhost dev server
 ```
@@ -47,3 +52,8 @@ State never leaves the GPU during stepping.
 - Drawing buffer is capped at 4096x2160 pixels. WebGL2 absence, float-target absence, shader compile/link failure,
   GPU allocation failure and context loss all produce a user-facing message or recovery, never a silent failure.
 - Dev server binds to 127.0.0.1, blocks path traversal and dotfiles. Production hosting is Phase 6.
+
+## Third-party data
+
+The Orbium unicaudatus pattern (`src/simulation/patterns.js`) is data from Bert Chan's MIT-licensed Lenia repository,
+used verbatim at a pinned commit. See `THIRD_PARTY_NOTICES.md` for the licence text, source file and how to re-verify it.

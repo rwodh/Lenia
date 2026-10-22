@@ -10,6 +10,8 @@ export const LIMITS = Object.freeze({
   maxTapsPerStep: 200_000_000,
   /** Cap on drawing-buffer size so very large / high-DPI screens degrade gracefully. */
   maxCanvasPixels: 4096 * 2160,
+  /** Bounds for imported/decoded patterns (RLE text): untrusted input must not allocate unboundedly. */
+  pattern: Object.freeze({ maxDimension: 256, maxRleLength: 100_000 }),
 });
 
 export const DEFAULT_PARAMS = Object.freeze({

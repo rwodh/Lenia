@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Lenia Orbium GPU verification</title>
+  <style>
+    body{font:13px ui-monospace,Menlo,Consolas,monospace;background:#0b0d12;color:#e6e9f2;padding:16px}
+    .pass{color:#5ee1b0}.fail{color:#ff7a7a}.info{color:#98a0b5}
+    #frames{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+    #frames figure{margin:0}#frames img{width:256px;height:256px;image-rendering:auto;border:1px solid #333;display:block}
+    #frames figcaption{color:#98a0b5;font-size:12px}
+    canvas{display:none}
+  </style>
+</head>
+<body>
+  <h1>Orbium (O2u) GPU verification</h1>
+  <p>Open via <code>npm start</code> at <code>/tests/browser/orbium-gpu.html</code> (optional <code>?long=1000</code>). Final line must read ALL PASS.</p>
+  <div id="frames"></div>
+  <pre id="result">running... (software GPUs are slow; this can take a minute or two)</pre>
+  <canvas id="view" width="384" height="384"></canvas>
+  <script type="module" src="./orbium-gpu.js"></script>
+</body>
+</html>
