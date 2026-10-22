@@ -21,6 +21,11 @@ Browser GPU checks (the last line of each must read `ALL PASS`):
 URL options (validated and clamped; see `src/simulation/params.js`):
 `?grid=64|128|256|512`  `?radius=3..24`  `?seed=<integer>`  `?debug` (exposes `window.leniaApp`).
 
+What you see at startup: the verified Orbium organism, run with its own parameters (radius 13, T=10, mu 0.15,
+sigma 0.015). Orbium only exists at that kernel radius, and patterns are never rescaled, so a URL that changes it
+(for example `?radius=10`) shows the random-noise start instead, with a note on screen saying why. `?seed=` only
+affects the noise start. Orbium is 20 cells wide, so `?grid=64` shows it much larger than the default 256 grid.
+
 ## Architecture
 
 ```
@@ -32,6 +37,7 @@ src/gl/                     context + capability probe, program compile/link, te
 src/shaders/                GLSL ES 3.00 as JS string modules (no fetch, no bundler)
 src/simulation/             kernel/growth math, params validation, seeds, CPU reference  (pure JS, Node-testable)
                             patterns.js = verified upstream organism data (Orbium O2u); rle.js = strict decoder for it
+                            startup.js = decides the starting state + parameters (Orbium, or noise if the URL is incompatible)
                             lenia.js = GPU simulation (ping-pong R32F textures, one fragment pass per step)
 src/render/renderer.js      display pass (colour map, smooth magnification) + drawing-buffer sizing
 src/ui/                     HUD and fatal-error panel (textContent only)
