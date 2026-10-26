@@ -6,10 +6,10 @@ reproduced verbatim from the upstream repository, as required by its permission 
 ## Lenia (Orbium unicaudatus pattern data)
 
 | | |
-|---|---|
+| --- | --- |
 | Work | Lenia - Mathematical Life Forms |
 | Author / copyright holder | Bert Chan |
-| Source repository | https://github.com/Chakazul/Lenia |
+| Source repository | [Chakazul/Lenia](https://github.com/Chakazul/Lenia) |
 | Pinned commit | `adfc542939266de7f4bb7ebb552e8499701ee107` (2022-03-16) |
 | Source file | `Python/animals.json` |
 | Entry used | `"code": "O2u"`, name "Orbium unicaudatus" (`cells` RLE string and `params` R=13, T=10, m=0.15, s=0.015) |
@@ -29,7 +29,7 @@ model; no upstream source files are copied.
 The unit test `tests/unit/patterns.test.js` checks the SHA-256 of the RLE string
 (`62abb2c511c8d0491dba11e36ab18da89f3c473fa0dbeba5b32e50f6cda67df0`). To reproduce it independently:
 
-```
+```sh
 curl -s https://raw.githubusercontent.com/Chakazul/Lenia/adfc542939266de7f4bb7ebb552e8499701ee107/Python/animals.json \
   | python3 -c "import sys,json,hashlib; r=next(x for x in json.load(sys.stdin) if x.get('code')=='O2u'); print(hashlib.sha256(r['cells'].encode()).hexdigest())"
 ```
@@ -42,7 +42,7 @@ sensitivity are documented in `src/simulation/patterns.js` and `tests/unit/patte
 
 ### Licence text (verbatim from upstream `LICENSE.md`)
 
-```
+```text
 MIT License
 
 Copyright (c) 2018 Bert Chan
