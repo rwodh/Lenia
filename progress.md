@@ -1,10 +1,12 @@
 # Progress
 
 ## Phase 1 - Foundation: DONE (v0.1.0)
+
 Static WebGL2 app: context/capability probing, shader pipeline, ping-pong GPU Lenia step (real kernel +
 growth), display pass with colour map, HUD, error handling, context-loss recovery, GPU back-pressure (FrameFence).
 
 ## Phase 2, milestone 1 - Verified Orbium seed: DONE
+
 - `src/simulation/patterns.js`: upstream `O2u` (Orbium unicaudatus), RLE verbatim, R=13 T=10 mu=0.15 sigma=0.015.
   Source: github.com/Chakazul/Lenia @ adfc542939266de7f4bb7ebb552e8499701ee107, `Python/animals.json` (MIT).
 - `src/simulation/rle.js`: strict, bounded decoder. `seed.js`: `placePatternCentred` (exact copy, no rescale).
@@ -13,6 +15,7 @@ growth), display pass with colour map, HUD, error handling, context-loss recover
   the literal upstream decoder source.
 
 ### Phase 2, milestone 2 - Orbium in normal startup: DONE
+
 - `src/simulation/startup.js` (`planStartup`): Orbium + its parameter set is the default start. If the URL changes any
   required parameter (today only `?radius=` can), the old random-noise start is used instead and a HUD note says why.
   `App` now receives `initialState` (it no longer hardcodes the noise seed); `main.js` builds the plan inside its error handling.
@@ -22,6 +25,7 @@ growth), display pass with colour map, HUD, error handling, context-loss recover
   noise; context loss + restore re-seeds with Orbium; WebGL2-unavailable still shows the fatal panel.
 
 ## Verification status
+
 - `npm test`: 45 unit tests pass.
 - `tests/browser/gpu-parity.html` and `tests/browser/orbium-gpu.html`: ALL PASS in headless Chromium on a SOFTWARE
   rasteriser (SwiftShader, 1 core). Never run on a real GPU.
@@ -31,6 +35,7 @@ growth), display pass with colour map, HUD, error handling, context-loss recover
   so speed must be measured with fine-grained unwrapped tracking, not start-to-end distance.
 
 ## Known limitations
+
 - The organism only exists at kernel radius 13; patterns are never rescaled. `?radius=` other than 13 therefore shows
   the random-noise start (with a note), not Orbium.
 - Orbium is 20 cells wide, so at the default 256 grid it is small on screen (no zoom yet). The default grid was not changed.
@@ -46,4 +51,5 @@ growth), display pass with colour map, HUD, error handling, context-loss recover
 - `maxTapsPerStep` (200M) is an estimate, not calibrated against real hardware.
 
 ## Next
+
 Pause / step / reset (reset reuses `App.initialState`), then runtime parameter controls.
