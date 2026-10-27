@@ -22,8 +22,8 @@ URL options (validated and clamped; see `src/simulation/params.js`):
 `?grid=64|128|256|512`  `?radius=3..24`  `?seed=<integer>`  `?debug` (exposes `window.leniaApp`).
 
 What you see at startup: the verified Orbium organism, run with its own parameters (radius 13, T=10, mu 0.15,
-sigma 0.015). Orbium only exists at that kernel radius, and patterns are never rescaled, so a URL that changes it
-(for example `?radius=10`) shows the random-noise start instead, with a note on screen saying why. `?seed=` only
+sigma 0.015). The stored pattern is defined at that kernel radius and this project never rescales patterns, so a URL
+that changes it (for example `?radius=10`) shows the random-noise start instead, with a note on screen saying why. `?seed=` only
 affects the noise start. Orbium is 20 cells wide, so `?grid=64` shows it much larger than the default 256 grid.
 
 ## Architecture
@@ -47,13 +47,18 @@ tests/browser/              in-browser GPU-vs-CPU parity check
 tools/serve.js              zero-dependency localhost dev server
 ```
 
+Startup flow: `main.js` -> `planStartup(URL params)` -> `App({ params, initialState })`; `App` uploads `initialState`
+to the GPU, and again after a context restore.
+
 Step: `U = K * A` (periodic convolution with a normalised single-ring kernel held in a texture),
 `A' = clamp(A + (1/T) * G(U), 0, 1)`, `G(u) = 2 exp(-(u-mu)^2 / (2 sigma^2)) - 1`.
 State never leaves the GPU during stepping.
 
 ## Security / robustness notes
 
-- No network requests, storage, analytics or secrets. CSP: `default-src 'none'; script-src 'self'; style-src 'self'`.
+- No network requests, storage, analytics or secrets. CSP (meta tag in `index.html`):
+  `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'`.
+  Response-header CSP and other security headers are Phase 6.
 - All parameters are validated; kernel radius is lowered automatically to keep `grid^2 * (2R+1)^2` under a cap.
 - Drawing buffer is capped at 4096x2160 pixels. WebGL2 absence, float-target absence, shader compile/link failure,
   GPU allocation failure and context loss all produce a user-facing message or recovery, never a silent failure.

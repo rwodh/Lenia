@@ -20,9 +20,12 @@ Scientific reference for the model and the organism:
 Chan, B. W.-C. "Lenia: Biology of Artificial Life", Complex Systems 28(3), 2019 (arXiv:1812.05433).
 
 Only the pattern data and its published parameters are taken from the upstream repository. The
-decoder (`src/simulation/rle.js`), the kernel and growth implementation, the GPU shaders and
-everything else in this project are original code, written against the published description of the
-model; no upstream source files are copied.
+decoder (`src/simulation/rle.js`) is an independent JavaScript implementation of the run-length format
+as read from upstream `Python/LeniaND.py` (`Board.rle2arr`). The kernel and growth implementation follow
+the formulas in Chan (2019) and match the upstream `bump4` / `gaus` definitions. The GPU shaders and
+everything else are original code. No upstream source text is copied.
+`tests/fixtures/orbium-o2u-reference.json` is the same pattern decoded by running the upstream decoder,
+and is used only to test ours.
 
 ### How to re-verify the data
 
