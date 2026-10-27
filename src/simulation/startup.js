@@ -18,9 +18,9 @@ export function patternMismatches(params, pattern) {
  * itself cannot be decoded (an internal bug).
  *
  * Default: the verified Orbium organism together with its own parameter set (radius 13, T=10,
- * mu 0.15, sigma 0.015). The organism only exists at that kernel radius and growth setting, and
- * patterns are never rescaled, so if the request would change any of them (for example ?radius=10)
- * Orbium is NOT shown; the previous random-noise start is used instead and `notes` says why.
+ * mu 0.15, sigma 0.015). The stored pattern is defined at that kernel radius and growth setting, and
+ * this project never rescales patterns, so if the request would change any of them (for example
+ * ?radius=10) Orbium is NOT shown; the previous random-noise start is used instead and `notes` says why.
  *
  * Returns { kind: 'orbium' | 'noise', params, initialState, notes }.
  */
