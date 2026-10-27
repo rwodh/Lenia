@@ -8,12 +8,13 @@ Computer Graphics Lab project, R. P. Shaha University.
 
 Requires Node 18+ only to serve files and run tests (ES modules do not load from `file://`).
 
-```
+```bash
 npm start        # http://localhost:8080/   (PORT=9000 npm start to change)
 npm test         # unit tests (node:test, no dependencies)
 ```
 
 Browser GPU checks (the last line of each must read `ALL PASS`):
+
 - `http://localhost:8080/tests/browser/gpu-parity.html` - GPU shaders vs the CPU reference, colour map, shader-error reporting.
 - `http://localhost:8080/tests/browser/orbium-gpu.html` - the verified Orbium organism on the GPU: parity after 1/5/20 steps,
   a long run (`?long=1000`), observable parity with the CPU, and grid-size independence. Takes about a minute on a software GPU.
@@ -28,7 +29,7 @@ affects the noise start. Orbium is 20 cells wide, so `?grid=64` shows it much la
 
 ## Architecture
 
-```
+```text
 index.html, styles.css      page shell (strict CSP meta tag, no inline scripts/styles)
 src/main.js                 bootstrap: parse params, create App, show fatal errors
 src/app.js                  owns GPU resources + animation loop (fixed step rate, GPU back-pressure, context loss)
