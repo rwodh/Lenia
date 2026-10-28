@@ -1,5 +1,6 @@
 // Draws the simulation state to the screen: aspect-correct square fit, smooth
-// (manual bilinear) magnification, and a viridis colour map. Cell (0,0) is bottom-left.
+// (manual bilinear) magnification, and a selectable colour map (0 = viridis, 1 = observatory).
+// Colour is display only; the simulation state is never modified. Cell (0,0) is bottom-left.
 export default /* glsl */ `#version 300 es
 precision highp float;
 precision highp int;
@@ -8,6 +9,7 @@ precision highp sampler2D;
 uniform sampler2D uState;
 uniform int uGridSize;
 uniform vec2 uCanvasSize;
+uniform int uPalette;
 
 out vec4 outColor;
 
@@ -23,6 +25,17 @@ vec3 viridis(float t) {
   const vec3 c5 = vec3(4.776384997670288, -13.74514537774601, -65.35303263337234);
   const vec3 c6 = vec3(-5.435455855934631, 4.645852612178535, 26.3124352495832);
   return c0 + t * (c1 + t * (c2 + t * (c3 + t * (c4 + t * (c5 + t * c6)))));
+}
+
+// Dark navy -> ocean -> teal -> pale aqua -> amber. A mild gamma lifts the faint outer cells of an organism.
+vec3 observatory(float v) {
+  float t = pow(v, 0.75);
+  vec3 c = vec3(0.035, 0.070, 0.135);
+  c = mix(c, vec3(0.040, 0.230, 0.400), clamp(t / 0.25, 0.0, 1.0));
+  c = mix(c, vec3(0.090, 0.560, 0.650), clamp((t - 0.25) / 0.25, 0.0, 1.0));
+  c = mix(c, vec3(0.590, 0.910, 0.830), clamp((t - 0.50) / 0.25, 0.0, 1.0));
+  c = mix(c, vec3(1.000, 0.850, 0.520), clamp((t - 0.75) / 0.25, 0.0, 1.0));
+  return c;
 }
 
 float cell(ivec2 c) {
@@ -47,6 +60,6 @@ void main() {
     return;
   }
   float v = clamp(sampleState(uv * float(uGridSize)), 0.0, 1.0);
-  outColor = vec4(clamp(viridis(v), 0.0, 1.0), 1.0);
+  outColor = vec4(clamp(uPalette == 1 ? observatory(v) : viridis(v), 0.0, 1.0), 1.0);
 }
 `;

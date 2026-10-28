@@ -5,7 +5,7 @@ import { planStartup, patternMismatches } from '../../src/simulation/startup.js'
 import { parseQueryParams } from '../../src/simulation/params.js';
 import { ORBIUM_O2U } from '../../src/simulation/patterns.js';
 import { randomDiscSeed } from '../../src/simulation/seed.js';
-import { LIMITS } from '../../src/config.js';
+import { LIMITS, DEFAULT_PARAMS } from '../../src/config.js';
 
 const reference = JSON.parse(readFileSync(new URL('../fixtures/orbium-o2u-reference.json', import.meta.url), 'utf8'));
 const sum = (a) => { let s = 0; for (const v of a) s += v; return s; };
@@ -14,13 +14,13 @@ test('default startup (no query) is Orbium with its own parameter set, unmodifie
   const plan = planStartup(parseQueryParams(''));
   assert.equal(plan.kind, 'orbium');
   assert.deepEqual(plan.notes, []);
-  assert.equal(plan.params.gridSize, 256);
+  assert.equal(plan.params.gridSize, DEFAULT_PARAMS.gridSize);
   assert.equal(plan.params.radius, 13);
   assert.equal(plan.params.timeSteps, 10);
   assert.equal(plan.params.mu, 0.15);
   assert.equal(plan.params.sigma, 0.015);
   assert.ok(plan.initialState instanceof Float32Array);
-  assert.equal(plan.initialState.length, 256 * 256);
+  assert.equal(plan.initialState.length, DEFAULT_PARAMS.gridSize ** 2);
   assert.ok(Math.abs(sum(plan.initialState) - 19600 / 255) < 1e-3, 'mass of the verified pattern');
 });
 
