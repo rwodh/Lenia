@@ -10,9 +10,15 @@ export class Renderer {
     this.canvas = canvas;
     this.caps = caps;
     this.program = createProgram(gl, 'display', fullscreenVert, displayFrag, [
-      'uState', 'uGridSize', 'uCanvasSize',
+      'uState', 'uGridSize', 'uCanvasSize', 'uPalette',
     ]);
     this.vao = gl.createVertexArray();
+    this.palette = 0; // viridis; the app selects its own default through setPalette()
+  }
+
+  /** 'viridis' or 'observatory'. Display only. */
+  setPalette(name) {
+    this.palette = name === 'observatory' ? 1 : 0;
   }
 
   /**
@@ -43,6 +49,7 @@ export class Renderer {
     gl.uniform1i(program.uniforms.uState, 0);
     gl.uniform1i(program.uniforms.uGridSize, gridSize);
     gl.uniform2f(program.uniforms.uCanvasSize, canvas.width, canvas.height);
+    gl.uniform1i(program.uniforms.uPalette, this.palette);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

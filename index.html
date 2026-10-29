@@ -11,12 +11,200 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <canvas id="lenia-canvas" role="img" aria-label="Real-time Lenia simulation"></canvas>
+  <!-- Guided Discovery. Static content; script only shows/hides steps and updates progress text. -->
+  <div id="tour" class="tour" hidden>
+    <div class="tour-backdrop"></div>
+    <div class="tour-card" role="dialog" aria-labelledby="tour-title" tabindex="-1">
+      <p class="tour-progress" data-tour="progress"></p>
 
-  <div id="hud" role="status" aria-live="off">
-    <h1>Lenia <span>continuous artificial life</span></h1>
-    <p data-hud="line">starting...</p>
-    <p data-hud="note" hidden></p>
+      <section data-tour-step="welcome" hidden>
+        <h2 id="tour-title">LENIA &mdash; Continuous Artificial Life Explorer</h2>
+        <p>Lenia is a continuous cellular automaton: a grid of cells whose values change smoothly under one simple mathematical rule. From that rule, life-like patterns can emerge, organisms that glide across the grid while holding their shape.</p>
+        <p class="bn" lang="bn">লেনিয়া হলো একটি ধারাবাহিক সেলুলার অটোমাটা, যেখানে গাণিতিক নিয়ম থেকে জটিল, প্রাণসদৃশ নকশা তৈরি হতে পারে।</p>
+        <p>In about two minutes you will meet the controls, change one parameter yourself, and watch what it does.</p>
+        <p class="bn" lang="bn">প্রায় দুই মিনিটে আপনি কন্ট্রোলগুলো চিনবেন, নিজে একটি প্যারামিটার বদলাবেন এবং ফলাফল দেখবেন।</p>
+        <div class="tour-actions">
+          <button type="button" class="btn btn-primary" data-tour-action="next">Start guided tour</button>
+          <button type="button" class="btn btn-ghost" data-tour-action="skip">Skip to Explorer</button>
+        </div>
+      </section>
+
+      <section data-tour-step="controls" hidden>
+        <h2>Meet the controls</h2>
+        <ul class="tour-list">
+          <li><strong>Play / Pause</strong> runs or freezes the simulation. Nothing is lost while paused.</li>
+          <li><strong>Step</strong> advances exactly one step while paused.</li>
+          <li><strong>Reset</strong> returns to the starting organism and starting parameters.</li>
+          <li><strong>Speed</strong> sets steps per second, from 0.25x to 2x.</li>
+        </ul>
+        <p class="bn" lang="bn">Play/Pause সিমুলেশন চালায় বা থামায়; Step থামা অবস্থায় ঠিক একটি ধাপ এগোয়; Reset শুরুর অবস্থায় ফেরায়; Speed গতি বদলায়। একটু চেপে দেখুন।</p>
+        <div class="tour-actions">
+          <button type="button" class="btn" data-tour-action="back">Back</button>
+          <button type="button" class="btn btn-primary" data-tour-action="next">Next</button>
+          <button type="button" class="btn btn-ghost" data-tour-action="skip">Skip tour</button>
+        </div>
+      </section>
+
+      <section data-tour-step="params" hidden>
+        <h2>Three dials</h2>
+        <ul class="tour-list">
+          <li><strong>&mu;</strong> where growth is strongest, <strong>&sigma;</strong> how wide that window is, <strong>T</strong> how small each time step is.</li>
+          <li>They change the rule itself, so they change the organism's behaviour, live.</li>
+        </ul>
+        <p class="bn" lang="bn">এই তিনটি ডায়াল নিয়মটাই বদলায়, তাই জীবটির আচরণও সঙ্গে সঙ্গে বদলে যায়।</p>
+        <div class="tour-actions">
+          <button type="button" class="btn" data-tour-action="back">Back</button>
+          <button type="button" class="btn btn-primary" data-tour-action="next">Start the experiment</button>
+          <button type="button" class="btn btn-ghost" data-tour-action="skip">Skip tour</button>
+        </div>
+      </section>
+
+      <section data-tour-step="observe" hidden>
+        <h2>Experiment 1/3: observe</h2>
+        <p>This is Orbium with &sigma; = 0.015. Watch it glide and keep its shape for a moment.</p>
+        <p class="bn" lang="bn">এটি Orbium, এখন σ = 0.015। জীবটি কীভাবে আকার ধরে রেখে এগোচ্ছে, একটু দেখুন।</p>
+        <progress data-tour="observe-progress" max="1" value="0" aria-label="Observation progress"></progress>
+        <p class="tour-status" data-tour="observe-status" aria-live="polite"></p>
+        <div class="tour-actions">
+          <button type="button" class="btn" data-tour-action="back">Back</button>
+          <button type="button" class="btn btn-primary" data-tour-action="next" disabled>Next</button>
+          <button type="button" class="btn btn-ghost" data-tour-action="skip">Skip tour</button>
+        </div>
+      </section>
+
+      <section data-tour-step="change" hidden>
+        <h2>Experiment 2/3: change one dial</h2>
+        <p>The simulation is paused so you can set the dial. Lower <strong>&sigma;</strong> from 0.015 to <strong>0.011</strong>: drag the slider, or focus it and press the left arrow key four times.</p>
+        <p class="bn" lang="bn">ডায়াল ঠিক করার জন্য সিমুলেশন থামানো আছে। σ-এর স্লাইডারটি 0.015 থেকে 0.011-এ নামান। স্লাইডার টানুন, অথবা ফোকাস করে বাম তীর চারবার চাপুন।</p>
+        <p class="tour-status" data-tour="change-status" aria-live="polite"></p>
+        <div class="tour-actions">
+          <button type="button" class="btn" data-tour-action="back">Back</button>
+          <button type="button" class="btn btn-primary" data-tour-action="next" disabled>Next</button>
+          <button type="button" class="btn btn-ghost" data-tour-action="skip">Skip tour</button>
+        </div>
+      </section>
+
+      <section data-tour-step="watch" hidden>
+        <h2>Experiment 3/3: watch what happens</h2>
+        <p>Press <strong>Play</strong> (or press <strong>Step</strong> a few times) and look at the organism.</p>
+        <p class="bn" lang="bn">Play চাপুন (অথবা কয়েকবার Step চাপুন) এবং জীবটির কী হয় লক্ষ্য করুন।</p>
+        <progress data-tour="watch-progress" max="1" value="0" aria-label="Watching progress"></progress>
+        <p class="tour-status" data-tour="watch-status" aria-live="polite"></p>
+        <div class="tour-actions">
+          <button type="button" class="btn" data-tour-action="back">Back</button>
+          <button type="button" class="btn btn-primary" data-tour-action="next" disabled>Next</button>
+          <button type="button" class="btn btn-ghost" data-tour-action="skip">Skip tour</button>
+        </div>
+      </section>
+
+      <section data-tour-step="done" hidden>
+        <h2>What you just saw</h2>
+        <p>Lowering &sigma; from 0.015 to 0.011 was enough for this Orbium to fade away. A small nudge can be tolerated, but past some point the organism can no longer sustain itself. The rule never mentions gliding or surviving: those behaviours emerge from how the kernel, the growth window and the time step balance each other.</p>
+        <p class="bn" lang="bn">σ 0.015 থেকে 0.011 করতেই এই Orbium মিলিয়ে গেল। ছোট পরিবর্তন সে সহ্য করতে পারে, কিন্তু একটা সীমার পরে আর টিকে থাকতে পারে না। নিয়মে চলা বা টিকে থাকার কথা কোথাও লেখা নেই; কার্নেল, বৃদ্ধির সীমা ও সময়ের ধাপের ভারসাম্য থেকেই এই আচরণ তৈরি হয় (emergence)।</p>
+        <p>You can now explore on your own. Entering the Explorer resets Orbium and its parameters.</p>
+        <p class="bn" lang="bn">এবার নিজে অন্বেষণ করুন। Explorer-এ ঢুকলে Orbium ও প্যারামিটার শুরুর অবস্থায় ফিরবে।</p>
+        <div class="tour-actions">
+          <button type="button" class="btn" data-tour-action="back">Back</button>
+          <button type="button" class="btn btn-primary" data-tour-action="enter">Enter Lenia Explorer</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1>LENIA</h1>
+        <p>Continuous Artificial Life Explorer</p>
+      </div>
+      <div class="topbar-actions">
+        <span class="pill" data-hud="state" role="status">Starting...</span>
+        <button type="button" class="btn btn-ghost" id="tour-open" hidden>Guided tour</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="stage" aria-label="Simulation view">
+        <canvas id="lenia-canvas" role="img" aria-label="Real-time Lenia simulation, drawn by the GPU"></canvas>
+        <p class="stage-caption">Periodic world: whatever leaves one edge re-enters the opposite edge.</p>
+        <p class="stage-note" data-hud="note" hidden></p>
+      </section>
+
+      <aside class="panel" aria-label="Controls and information">
+        <section class="card" id="card-transport" aria-labelledby="h-sim">
+          <h2 id="h-sim">Simulation</h2>
+          <div class="transport">
+            <button type="button" class="btn btn-primary" id="btn-play" aria-keyshortcuts="Space">Pause</button>
+            <button type="button" class="btn" id="btn-step" aria-keyshortcuts="S">Step</button>
+            <button type="button" class="btn" id="btn-reset" aria-keyshortcuts="R">Reset</button>
+          </div>
+          <div class="row">
+            <span class="row-label" id="l-speed">Speed</span>
+            <div class="seg" role="group" aria-labelledby="l-speed" id="seg-speed"></div>
+          </div>
+          <div class="row">
+            <span class="row-label" id="l-colour">Colour</span>
+            <div class="seg" role="group" aria-labelledby="l-colour" id="seg-colour"></div>
+          </div>
+          <p class="keys"><kbd>Space</kbd> play / pause &middot; <kbd>S</kbd> step (paused) &middot; <kbd>R</kbd> reset</p>
+        </section>
+
+        <section class="card" id="card-status" aria-labelledby="h-status">
+          <h2 id="h-status">Status</h2>
+          <dl class="facts">
+            <div><dt>Generation</dt><dd data-hud="gen">0</dd></div>
+            <div><dt>Pattern</dt><dd data-hud="pattern">-</dd></div>
+            <div><dt>World</dt><dd data-hud="world">-</dd></div>
+            <div><dt>Render</dt><dd data-hud="render">-</dd></div>
+          </dl>
+        </section>
+
+        <section class="card" id="card-params" aria-labelledby="h-params">
+          <h2 id="h-params">Parameters</h2>
+          <p class="lede">Change them while it runs. <span lang="bn" class="bn">চলন্ত অবস্থাতেই বদলে দেখুন।</span></p>
+
+          <div class="param" data-param="mu">
+            <div class="param-head">
+              <label for="p-mu"><span class="sym">&mu;</span> Growth centre</label>
+              <output for="p-mu" data-out="mu"></output>
+            </div>
+            <input type="range" id="p-mu" data-input="mu">
+            <p class="hint">The neighbourhood value at which a cell grows fastest. <span class="start" data-start="mu"></span></p>
+            <p class="hint bn" lang="bn">আশপাশের মান কত হলে কোষ সবচেয়ে দ্রুত বাড়ে, সেটি ঠিক করে।</p>
+          </div>
+
+          <div class="param" data-param="sigma">
+            <div class="param-head">
+              <label for="p-sigma"><span class="sym">&sigma;</span> Growth width</label>
+              <output for="p-sigma" data-out="sigma"></output>
+            </div>
+            <input type="range" id="p-sigma" data-input="sigma">
+            <p class="hint">How far from &mu; growth still happens. Small &sigma; is a strict rule. <span class="start" data-start="sigma"></span></p>
+            <p class="hint bn" lang="bn">μ থেকে সরে গেলেও বৃদ্ধি কতটা টিকে থাকে। σ ছোট মানে শর্ত কড়া।</p>
+          </div>
+
+          <div class="param" data-param="timeSteps">
+            <div class="param-head">
+              <label for="p-timeSteps"><span class="sym">T</span> Time resolution</label>
+              <output for="p-timeSteps" data-out="timeSteps"></output>
+            </div>
+            <input type="range" id="p-timeSteps" data-input="timeSteps">
+            <p class="hint">Each step changes a cell by 1/T. Larger T means smaller, smoother steps. <span class="start" data-start="timeSteps"></span></p>
+            <p class="hint bn" lang="bn">প্রতি ধাপে কোষ 1/T অংশ বদলায়। T বড় হলে পরিবর্তন ধীর ও মসৃণ।</p>
+          </div>
+
+          <p class="fixed-note">Fixed for this organism: kernel radius <strong data-hud="radius">13</strong> and the grid size (changing the radius changes the organism).</p>
+        </section>
+
+        <section class="card" id="card-about" aria-labelledby="h-about">
+          <h2 id="h-about">What are you observing?</h2>
+          <p>Each cell holds a value from 0 to 1 (brighter means a higher value). Every step, a GPU shader adds up the ring-shaped neighbourhood of each cell, passes that sum through a growth function that is positive near &mu; and negative elsewhere, and nudges the cell by 1/T. Nothing tells the organism to move: its gliding emerges from these rules.</p>
+          <p class="bn" lang="bn">প্রতিটি কোষের মান ০ থেকে ১ (যত উজ্জ্বল, মান তত বেশি)। প্রতি ধাপে GPU শেডার প্রতিটি কোষের চারপাশের বলয়াকার প্রতিবেশীর মান যোগ করে, সেটিকে একটি বৃদ্ধি-ফাংশনের মধ্য দিয়ে পাঠায় (μ-এর কাছে ধনাত্মক, অন্যত্র ঋণাত্মক) এবং কোষটিকে 1/T পরিমাণ বদলায়। জীবটিকে চলতে বলা হয়নি; এই নিয়মগুলো থেকেই তার চলন তৈরি হয়।</p>
+          <p>This is a real-time computation, not a video: it runs on your GPU in WebGL2, one fragment-shader pass per step on floating-point textures, and the same textures are drawn to the screen.</p>
+          <p class="bn" lang="bn">এটি ভিডিও নয়; সিমুলেশনটি রিয়েল-টাইমে আপনার GPU-তে WebGL2 দিয়ে চলছে।</p>
+        </section>
+      </aside>
+    </main>
   </div>
 
   <div id="fatal" role="alert" hidden>
