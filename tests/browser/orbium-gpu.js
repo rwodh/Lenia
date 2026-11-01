@@ -1,4 +1,4 @@
-// Verifies the verified Orbium (O2u) organism on the real GPU shader path:
+// Verifies each library organism (O2u first, then O2b; the O2b lines are prefixed "[O2b]") on the real GPU shader path:
 //  A. uploaded state equals the seed exactly
 //  B. GPU == CPU reference after 1, 5 and 20 steps (max abs error vs tolerance)
 //  C. long GPU run: mass, shape (translation-invariant correlation), motion, WebGL errors, CPU parity at checkpoints
@@ -12,15 +12,22 @@ import { buildKernel } from '../../src/simulation/kernel.js';
 import { stepReference } from '../../src/simulation/reference.js';
 import { decodeRle } from '../../src/simulation/rle.js';
 import { placePatternCentred } from '../../src/simulation/seed.js';
-import { ORBIUM_O2U } from '../../src/simulation/patterns.js';
+import { PATTERN_LIBRARY } from '../../src/simulation/patterns.js';
 
 // Long-horizon rationale: this system is sensitive to initial conditions (a 1e-7 seed perturbation amplifies ~5000x
 // by step 700, and float32-vs-float64 CPU variants diverge ~1e-2 pointwise with no GPU involved), so pointwise parity is
-// only meaningful early. It is enforced strictly for the first `earlyHorizon` steps; after that GPU and CPU are compared on
+// only meaningful early. It is enforced strictly for each pattern's `pointwiseHorizon` (200 steps for O2u, 20 for O2b); after that GPU and CPU are compared on
 // observables (total mass, centroid). Observable tolerances were fixed before they were first measured.
 const THRESHOLDS = {
   parityTolerance: 1e-3, parityToleranceHalf: 1e-2,
   earlyHorizon: 200, observableMass: 1.0, observableCentroidCells: 2.0,
+  // Per-pattern step count through which GPU == CPU is asserted POINTWISE. The tolerances are the existing, unchanged ones:
+  // `parityTolerance` 1e-3 for float32 state (every run recorded so far) and `parityToleranceHalf` 1e-2 for the float16 fallback,
+  // chosen from the state format at the `tol` line in verifyPattern(). The strict 1/5/20-step checks (B) apply to every pattern.
+  // O2u is also checked at the 100 and 200 checkpoints of the long run; O2b is not: on the GPU (float32) it measured 1.70e-3 at
+  // step 200 (1.77e-4 at 100), and the owner approved shortening its pointwise horizon to 20 steps instead of loosening the
+  // tolerance (DECISIONS.md 23). Its long-run correctness is judged by the behavioural checks.
+  pointwiseHorizon: { O2u: 200, O2b: 20 },
   massRatio: [0.8, 1.1], minShapeCorrelation: 0.85, gridIndependence: 1e-3,
 };
 const LONG_STEPS = Math.max(100, Math.min(5000, Number(new URLSearchParams(location.search).get('long')) || 1000));
@@ -31,7 +38,8 @@ const out = document.getElementById('result');
 const lines = [];
 let failures = 0;
 const log = (text, cls = '') => lines.push({ text, cls });
-const check = (name, ok, extra = '') => { if (!ok) failures++; log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  ' + extra : ''}`, ok ? 'pass' : 'fail'); };
+let prefix = ''; // '' for the first library pattern (its output is unchanged), '[O2b] ' for the next
+const check = (name, ok, extra = '') => { if (!ok) failures++; log(`${ok ? 'PASS' : 'FAIL'}  ${prefix}${name}${extra ? '  ' + extra : ''}`, ok ? 'pass' : 'fail'); };
 const flush = () => {
   out.textContent = '';
   for (const { text, cls } of lines) { const d = document.createElement('div'); d.textContent = text || '\u00a0'; if (cls) d.className = cls; out.appendChild(d); }
@@ -71,18 +79,37 @@ function shapeCorrelation(state, ref, n) {
 const frames = [];
 const grabFrame = (renderer, sim, label) => {
   renderer.draw(sim.stateTexture, sim.size);
-  frames.push({ label, url: renderer.canvas.toDataURL('image/png') });
+  frames.push({ label: prefix + label, url: renderer.canvas.toDataURL('image/png') });
 };
 
 async function main() {
   const canvas = document.getElementById('view');
   const { gl, caps } = createGLContext(canvas);
   log(`renderer: ${caps.renderer}`, 'info');
-  log(`state format: ${caps.stateFormat.name}; pattern ${ORBIUM_O2U.id} "${ORBIUM_O2U.name}"; params ${JSON.stringify(ORBIUM_O2U.params)}`, 'info');
-  const tol = caps.stateFormat.name === 'float32' ? THRESHOLDS.parityTolerance : THRESHOLDS.parityToleranceHalf;
-  const pattern = decodeRle(ORBIUM_O2U.rle);
-  const make = (gridSize) => normalizeParams({ gridSize, ...ORBIUM_O2U.params }).params;
   const renderer = new Renderer(gl, canvas, caps);
+  for (const [i, library] of PATTERN_LIBRARY.entries()) {
+    prefix = i === 0 ? '' : `[${library.id}] `;
+    if (i > 0) { log(''); await tick(); }
+    await verifyPattern(library, gl, caps, renderer);
+  }
+  prefix = '';
+  renderer.dispose();
+
+  const fr = document.getElementById('frames');
+  for (const f of frames) {
+    const fig = document.createElement('figure'), img = document.createElement('img'), cap = document.createElement('figcaption');
+    img.src = f.url; img.alt = `Orbium simulation, ${f.label}`; cap.textContent = f.label;
+    fig.append(img, cap); fr.appendChild(fig);
+  }
+  window.__frames = frames.map((f) => ({ label: f.label, url: f.url }));
+}
+
+/** The whole A to D verification for one library pattern. Thresholds are the same for every pattern. */
+async function verifyPattern(PATTERN, gl, caps, renderer) {
+  log(`state format: ${caps.stateFormat.name}; pattern ${PATTERN.id} "${PATTERN.name}"; params ${JSON.stringify(PATTERN.params)}`, 'info');
+  const tol = caps.stateFormat.name === 'float32' ? THRESHOLDS.parityTolerance : THRESHOLDS.parityToleranceHalf;
+  const pattern = decodeRle(PATTERN.rle);
+  const make = (gridSize) => normalizeParams({ gridSize, ...PATTERN.params }).params;
   let glErrors = [];
   const glCheck = (where) => { const e = gl.getError(); if (e !== gl.NO_ERROR) glErrors.push(`${where}: 0x${e.toString(16)}`); };
 
@@ -125,6 +152,8 @@ async function main() {
   // ~60 cells: ambiguous on a 64-cell torus. At 10-step sampling each jump is ~6 cells, which is unambiguous
   // (verified below via maxJump < n/4) and lets us accumulate an unwrapped path.
   let cpu = seed, prevC = c0, windowPath = 0, pathTotal = 0, netX = 0, netY = 0, maxJump = 0;
+  const pointwiseHorizon = THRESHOLDS.pointwiseHorizon[PATTERN.id] ?? 20; // the long-run checkpoints are 100 steps apart
+  let assertedParity = 0;
   let worstParity = 0, earlyParity = 0, worstDMass = 0, worstDCent = 0, valuesOk = true, massOk = true, corrMin = 1, minRatio = Infinity, maxRatio = 0, lastRatio = 1;
   for (let t = 1; t <= LONG_STEPS; t++) {
     sim.step();
@@ -142,6 +171,7 @@ async function main() {
         const cc = circularCentroid(cpu, n), dM = Math.abs(mass - sum(cpu)), dC = Math.hypot(wrapDelta(c.x, cc.x, n), wrapDelta(c.y, cc.y, n));
         worstParity = Math.max(worstParity, par); worstDMass = Math.max(worstDMass, dM); worstDCent = Math.max(worstDCent, dC);
         if (t <= THRESHOLDS.earlyHorizon) earlyParity = Math.max(earlyParity, par);
+        if (t <= pointwiseHorizon) assertedParity = Math.max(assertedParity, par);
         corrMin = Math.min(corrMin, corr);
         minRatio = Math.min(minRatio, ratio); maxRatio = Math.max(maxRatio, ratio); lastRatio = ratio;
         if (ratio < THRESHOLDS.massRatio[0] || ratio > THRESHOLDS.massRatio[1]) massOk = false;
@@ -158,7 +188,11 @@ async function main() {
   check(`C. organism stays recognizable (shape correlation >= ${THRESHOLDS.minShapeCorrelation})`, corrMin >= THRESHOLDS.minShapeCorrelation, `min ${corrMin.toFixed(3)}`);
   check('C. motion tracking is unambiguous (every sampled jump < n/4)', maxJump < n / 4, `max jump ${maxJump.toFixed(2)} cells per ${SAMPLE_EVERY} steps`);
   check('C. organism translates steadily (unwrapped path > 10 cells)', pathTotal > 10, `path ${pathTotal.toFixed(1)} cells, net (${netX.toFixed(1)}, ${netY.toFixed(1)}) = ${Math.hypot(netX, netY).toFixed(1)} cells in ${LONG_STEPS} steps; mean speed ${(pathTotal / LONG_STEPS).toFixed(3)} cells/step`);
-  check(`C. pointwise GPU == CPU through the first ${THRESHOLDS.earlyHorizon} steps (checkpoints)`, earlyParity <= tol, `maxAbsError=${earlyParity.toExponential(2)} tolerance=${tol}`);
+  if (pointwiseHorizon >= CHECK_EVERY) {
+    check(`C. pointwise GPU == CPU through the first ${pointwiseHorizon} steps (checkpoints)`, assertedParity <= tol, `maxAbsError=${assertedParity.toExponential(2)} tolerance=${tol}`);
+  } else {
+    log(`info  pointwise GPU == CPU is asserted only for the 1/5/20-step checks above (B) for this pattern; the long-run checkpoint error through step ${THRESHOLDS.earlyHorizon} was ${earlyParity.toExponential(2)} (tolerance ${tol}), reported, NOT asserted`, 'info');
+  }
   check(`C. GPU and CPU observables agree for the whole run (|dMass| <= ${THRESHOLDS.observableMass}, |dCentroid| <= ${THRESHOLDS.observableCentroidCells} cells)`, worstDMass <= THRESHOLDS.observableMass && worstDCent <= THRESHOLDS.observableCentroidCells, `worst dMass=${worstDMass.toFixed(4)} worst dCentroid=${worstDCent.toFixed(4)} cells`);
   log(`info  pointwise GPU-vs-CPU error beyond the early horizon is NOT asserted (chaotic amplification; worst over the run ${worstParity.toExponential(2)})`, 'info');
   const finalGpu = sim.readState();
@@ -179,15 +213,6 @@ async function main() {
   }
   glCheck('end');
   check('no WebGL errors during the whole run', glErrors.length === 0, glErrors.join('; '));
-  renderer.dispose();
-
-  const fr = document.getElementById('frames');
-  for (const f of frames) {
-    const fig = document.createElement('figure'), img = document.createElement('img'), cap = document.createElement('figcaption');
-    img.src = f.url; img.alt = `Orbium simulation, ${f.label}`; cap.textContent = f.label;
-    fig.append(img, cap); fr.appendChild(fig);
-  }
-  window.__frames = frames.map((f) => ({ label: f.label, url: f.url }));
 }
 
 try { await main(); } catch (e) { failures++; log(`FAIL  unexpected exception: ${e && e.stack ? e.stack : e}`, 'fail'); }

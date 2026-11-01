@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LIMITS, DEFAULT_PARAMS, UI_RANGES, SPEEDS, DEFAULT_SPEED_ID, EXPERIMENT, LOOP } from '../../src/config.js';
-import { ORBIUM_O2U } from '../../src/simulation/patterns.js';
+import { ORBIUM_O2U, getPattern } from '../../src/simulation/patterns.js';
 import { normalizeParams } from '../../src/simulation/params.js';
 import { observeProgress, atTarget, watchProgress } from '../../src/ui/experiment.js';
 import { hasCompletedTour, markTourCompleted, safeLocalStorage } from '../../src/ui/storage.js';
@@ -60,4 +60,11 @@ test('tour storage helpers tolerate blocked or throwing storage', () => {
   assert.equal(hasCompletedTour(null, 'k'), false);
   assert.equal(markTourCompleted(null, 'k'), false);
   assert.equal(safeLocalStorage({ get localStorage() { throw new Error('blocked'); } }), null);
+});
+
+test('the tour pins a library pattern whose sigma is the experiment start, so the claims it makes still hold', () => {
+  const p = getPattern(EXPERIMENT.patternId); // throws if the id is not in the library
+  assert.equal(p.id, 'O2u');
+  assert.equal(p.params[EXPERIMENT.param], 0.015);
+  assert.notEqual(p.params[EXPERIMENT.param], EXPERIMENT.targetValue);
 });

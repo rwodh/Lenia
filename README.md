@@ -14,6 +14,11 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
   press Play and watch the organism fade. *Next* unlocks only when you have actually done each part. Esc or *Skip* leaves at any
   time; leaving (or *Enter Lenia Explorer*) resets Orbium and its parameters and plays. First-visit memory is one flag in
   `localStorage` (`lenia.tour.v1`); if storage is blocked the tour simply shows again. `?tour` forces it open.
+- **Organisms**: an *Organism* card chooses between two verified organisms from Chan's Lenia catalogue, **Orbium unicaudatus (O2u)**,
+  the default, and **Orbium bicaudatus (O2b)**. Choosing one loads its own seed and its own parameters (R, T, mu, sigma), updates the
+  status label and the slider "(start: ...)" values, and restarts; Reset (and `R`) then restores the *selected* organism. Play/pause
+  and speed are kept. The choice is locked while the guided tour is open (the tour always runs on O2u and ends with it selected) and
+  when the URL changes the kernel radius (the noise start has no organisms).
 - **Lenia Explorer**: Play/Pause, Step (exactly one step, paused only), Reset (initial organism *and* initial parameters; play state
   and speed are kept), Speed (0.25x to 2x of the 60 steps/s base rate), live sliders for mu, sigma and T, two colour maps
   (Observatory, Viridis; display only), status (Running/Paused, generation, pattern, world, render rate), and a
@@ -32,11 +37,13 @@ npm test         # unit tests (node:test, no dependencies)
 Browser GPU checks (the last line of each must read `ALL PASS`):
 
 - `http://localhost:8080/tests/browser/gpu-parity.html` - GPU shaders vs the CPU reference, colour map, shader-error reporting.
-- `http://localhost:8080/tests/browser/ui-flow.html` - drives the real page: Play/Pause/Step/Reset/parameters/speed/colour, a
+- `http://localhost:8080/tests/browser/ui-flow.html` - drives the real page: Play/Pause/Step/Reset/parameters/speed/colour, organism selection and switching, a
   check that repeated interaction never creates a second animation loop, and the whole guided tour including its
   first-visit memory. Takes about a minute on a software GPU.
-- `http://localhost:8080/tests/browser/orbium-gpu.html` - the verified Orbium organism on the GPU: parity after 1/5/20 steps,
-  a long run (`?long=1000`), observable parity with the CPU, and grid-size independence. Takes about a minute on a software GPU.
+- `http://localhost:8080/tests/browser/orbium-gpu.html` - each library organism on the GPU (O2u, then O2b with `[O2b]` lines): parity after
+  1/5/20 steps, a long run (`?long=1000`), observable parity with the CPU, and grid-size independence. Pointwise GPU-vs-CPU equality is
+  asserted over a short horizon only (200 steps for O2u, 20 for O2b); long-term correctness is judged by behavioural metrics, and long-term
+  pointwise equivalence is not claimed (`DECISIONS.md` 23). Takes about a minute on a software GPU.
 
 URL options (validated and clamped; see `src/simulation/params.js`):
 `?grid=64|128|256|512`  `?radius=3..24`  `?seed=<integer>`  `?tour` (open the guided tour)  `?debug` (exposes `window.leniaApp`).
@@ -58,8 +65,8 @@ src/config.js               limits and defaults
 src/gl/                     context + capability probe, program compile/link, textures/FBOs, frame fence
 src/shaders/                GLSL ES 3.00 as JS string modules (no fetch, no bundler)
 src/simulation/             kernel/growth math, params validation, seeds, CPU reference  (pure JS, Node-testable)
-                            patterns.js = verified upstream organism data (Orbium O2u); rle.js = strict decoder for it
-                            startup.js = decides the starting state + parameters (Orbium, or noise if the URL is incompatible)
+                            patterns.js = verified upstream organism data and the two-entry registry (O2u, O2b); rle.js = strict decoder
+                            startup.js = decides the starting state + parameters (Orbium O2u, or noise if the URL is incompatible); planPattern() plans a selection
                             lenia.js = GPU simulation (ping-pong R32F textures, one fragment pass per step)
 src/render/renderer.js      display pass (colour map, smooth magnification) + drawing-buffer sizing
 src/simulation/scheduler.js pure per-frame step planning (play / pause / single-step), unit-tested without WebGL
@@ -92,5 +99,5 @@ State never leaves the GPU during stepping.
 
 ## Third-party data
 
-The Orbium unicaudatus pattern (`src/simulation/patterns.js`) is data from Bert Chan's MIT-licensed Lenia repository,
-used verbatim at a pinned commit. See `THIRD_PARTY_NOTICES.md` for the licence text, source file and how to re-verify it.
+The Orbium unicaudatus (O2u) and Orbium bicaudatus (O2b) patterns (`src/simulation/patterns.js`) are data from Bert Chan's MIT-licensed
+Lenia repository, used verbatim at a pinned commit. See `THIRD_PARTY_NOTICES.md` for the licence text, source file and how to re-verify it.

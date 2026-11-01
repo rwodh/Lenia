@@ -1,6 +1,13 @@
 // Integration check of the real page: explorer controls (play/pause/step/reset/params/speed/palette), single animation
 // loop, and the Guided Discovery tour including its first-visit memory. Uses only the page's own DOM and the ?debug hook.
 import { TOUR_STORAGE_KEY, EXPERIMENT } from '../../src/config.js';
+import { getPattern } from '../../src/simulation/patterns.js';
+import { decodeRle } from '../../src/simulation/rle.js';
+import { placePatternCentred } from '../../src/simulation/seed.js';
+
+/** The exact initial state a library pattern must put on the GPU (page grid is 64). */
+const seedOf = (id, n = 64) => placePatternCentred(n, decodeRle(getPattern(id).rle));
+const diffMax = (a, b) => { let m = 0; for (let i = 0; i < a.length; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; };
 
 const out = document.getElementById('result');
 const lines = [];
@@ -108,11 +115,94 @@ try {
   check('No duplicate animation loops after repeated interaction', P.probe.max <= 1, `max pending rAF callbacks = ${P.probe.max}`);
   check('Controls leave no WebGL error behind', P.app.sim.gl.getError() === P.app.sim.gl.NO_ERROR);
 
+  // ---------- organism library: selection, Reset, repeated switching, context restore ----------
+  P = await load('');
+  {
+    const A = P.app;
+    const buttons = () => [...P.d.querySelectorAll('#seg-pattern button')];
+    const pressed = () => buttons().map((b) => b.getAttribute('aria-pressed')).join();
+    const onGpu = (id) => diffMax(A.sim.readState(), seedOf(id)) === 0; // synchronous with the click that preceded it: no frame can step in between
+    const hud = () => P.$('[data-hud=pattern]').textContent;
+    await until(() => hud() !== '-', 'HUD pattern label');
+    check('library: two organisms offered; O2u is shown, pressed and labelled', buttons().length === 2 && pressed() === 'true,false' && hud() === 'Orbium unicaudatus (O2u)' && A.patternId === 'O2u');
+
+    buttons()[1].click();
+    check('select O2b: GPU state equals the O2b seed exactly, generation 0', A.patternId === 'O2b' && onGpu('O2b') && A.sim.generation === 0);
+    check('select O2b: parameters are O2b\'s (mu 0.15, sigma 0.014, T 10) and Reset\'s target follows',
+      A.params.mu === 0.15 && A.params.sigma === 0.014 && A.params.timeSteps === 10 && A.params.radius === 13 && A.baseParams.sigma === 0.014);
+    check('select O2b: HUD label, sliders and "(start: ...)" labels follow immediately',
+      hud() === 'Orbium bicaudatus (O2b)' && P.$('#p-sigma').value === '0.014' && P.$('[data-out=sigma]').textContent === '0.014'
+      && P.$('[data-start=sigma]').textContent === '(start: 0.014)' && P.$('[data-start=mu]').textContent === '(start: 0.150)' && pressed() === 'false,true');
+    check('select O2b: description and facts line are shown',
+      P.$('[data-pattern=description]').textContent.length > 10 && P.$('[data-pattern=facts]').textContent.includes('σ 0.014') && P.$('[data-pattern=facts]').textContent.includes('R 13'));
+
+    const sg = P.$('#p-sigma'); sg.value = '0.02'; sg.dispatchEvent(new P.w.Event('input', { bubbles: true }));
+    await until(() => A.sim.generation > 0, 'O2b running with the changed sigma');
+    check('O2b: changing sigma applies to the live simulation', A.params.sigma === 0.02 && A.sim.generation > 0);
+    P.click('#btn-reset');
+    check('select O2b, change a parameter, Reset: the O2b seed and O2b parameters return (not Orbium\'s)',
+      A.patternId === 'O2b' && onGpu('O2b') && A.params.sigma === 0.014 && P.$('#p-sigma').value === '0.014' && hud() === 'Orbium bicaudatus (O2b)');
+    P.d.body.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: 'r', bubbles: true }));
+    check('the R key restores the selected pattern too', A.patternId === 'O2b' && onGpu('O2b'));
+
+    P.click('#btn-play'); // pause
+    await sleep(300);
+    buttons()[0].click();
+    check('select O2u again: O2u seed and parameters; play/pause and speed are kept',
+      A.paused === true && A.stepsPerSecond === 60 && A.patternId === 'O2u' && onGpu('O2u') && A.params.sigma === 0.015 && pressed() === 'true,false');
+    P.click('#btn-step');
+    await until(() => A.sim.generation === 1, 'single step');
+    A.selectPattern('O2u');
+    check('selecting the pattern already shown restarts it', A.sim.generation === 0 && onGpu('O2u'));
+    let threw = false;
+    try { A.selectPattern('nope'); } catch (e) { threw = e.name === 'RangeError'; }
+    check('an unknown pattern id is rejected and nothing changes', threw && A.patternId === 'O2u' && onGpu('O2u') && A.params.sigma === 0.015);
+
+    const sim0 = A.sim, kernelTex0 = A.sim.kernelTex, tex0 = A.sim.targets[0].tex, tex1 = A.sim.targets[1].tex, prog0 = A.sim.program;
+    for (let i = 0; i < 25; i++) { buttons()[1].click(); buttons()[0].click(); }
+    buttons()[1].click();
+    check('25 O2u/O2b round trips: same simulation, kernel texture, state textures and program (nothing recreated); ends on the O2b seed',
+      A.sim === sim0 && A.sim.kernelTex === kernelTex0 && A.sim.targets[0].tex === tex0 && A.sim.targets[1].tex === tex1 && A.sim.program === prog0 && A.patternId === 'O2b' && onGpu('O2b'));
+    P.click('#btn-play'); // resume
+    P.probe.max = 0;
+    await sleep(3000);
+    check('no second animation loop after repeated switching', P.probe.max <= 1, `max pending rAF callbacks = ${P.probe.max}`);
+    check('switching leaves no WebGL error behind', A.sim.gl.getError() === A.sim.gl.NO_ERROR);
+
+    A.pause();
+    A.selectPattern('O2b');
+    const ext = A.sim.gl.getExtension('WEBGL_lose_context');
+    check('WEBGL_lose_context is available to test restore', !!ext);
+    if (ext) {
+      const old = A.sim;
+      P.firstFormat = A.caps.stateFormat.name;
+      ext.loseContext();
+      await sleep(300);
+      ext.restoreContext();
+      await until(() => A.sim !== old && A.running, 'context restore', 30000);
+      // The restored context may pick a different state format than the first one (observed: float32 at start, float16 after
+      // a restore on this machine), so exactness is only demanded for float32; for float16 the seed is quantised (<= 5e-4).
+      const restored = A.sim.readState(), fmt = A.caps.stateFormat.name, tolSeed = fmt === 'float32' ? 0 : 1e-3;
+      log(`info  state format after the restore: ${fmt} (it was ${P.firstFormat} before the context loss)`, 'info');
+      check('context loss and restore after selecting O2b: re-seeded with O2b (not Orbium), O2b parameters kept',
+        A.patternId === 'O2b' && diffMax(restored, seedOf('O2b')) <= tolSeed && diffMax(restored, seedOf('O2u')) > 0.1
+        && A.params.sigma === 0.014 && hud() === 'Orbium bicaudatus (O2b)', `max diff to the O2b seed ${diffMax(restored, seedOf('O2b')).toExponential(2)} (${fmt})`);
+      check('no WebGL error after the restore', A.sim.gl.getError() === A.sim.gl.NO_ERROR);
+    }
+  }
+
   // ---------- returning visit: no auto tour; reopen works; experiment is interactive ----------
   P = await load('');
   check('returning visit: tour does not auto-open', P.$('#tour').hidden);
   check('"Guided tour" button is available', !P.$('#tour-open').hidden);
+  P.d.querySelectorAll('#seg-pattern button')[1].click(); // start the tour from O2b
+  check('before the tour: O2b is selected', P.app.patternId === 'O2b' && P.app.params.sigma === 0.014);
   P.click('#tour-open');
+  check('tour started from O2b selects O2u (state and parameters) and locks the selector',
+    P.app.patternId === 'O2u' && diffMax(P.app.sim.readState(), seedOf('O2u')) === 0 && P.app.params.sigma === 0.015
+    && [...P.d.querySelectorAll('#seg-pattern button')].every((b) => b.disabled) && !P.$('[data-pattern=locked]').hidden);
+  P.d.querySelectorAll('#seg-pattern button')[1].click();
+  check('the locked selector ignores clicks during the tour', P.app.patternId === 'O2u');
   const step = (n) => P.$(`[data-tour-step=${n}]`);
   const next = (n) => P.$(`[data-tour-step=${n}] [data-tour-action=next]`);
   P.click('[data-tour-step=welcome] [data-tour-action=next]');
@@ -144,10 +234,19 @@ try {
   check('Enter Explorer: tour closed, running, organism and sigma restored (same page, no reload)',
     P.$('#tour').hidden && !P.app.paused && P.app.params.sigma === 0.015 && sum(restored) > 60 && P.$('#app').inert === false, `mass=${sum(restored).toFixed(2)}`);
   check('no WebGL errors through the tour', P.app.sim.gl.getError() === P.app.sim.gl.NO_ERROR);
+  check('the tour started from O2b ends with O2u selected and the selector usable again',
+    P.app.patternId === 'O2u' && [...P.d.querySelectorAll('#seg-pattern button')].every((b) => !b.disabled)
+    && P.d.querySelectorAll('#seg-pattern button')[0].getAttribute('aria-pressed') === 'true' && P.$('[data-hud=pattern]').textContent === 'Orbium unicaudatus (O2u)');
+  P.d.querySelectorAll('#seg-pattern button')[1].click();
+  check('after the tour the user can select O2b again', P.app.patternId === 'O2b' && diffMax(P.app.sim.readState(), seedOf('O2b')) === 0);
 
   // ---------- unavailable storage and incompatible URL ----------
   P = await load('&radius=10');
   check('noise start (radius != 13): tour is not offered', P.$('#tour-open').hidden && P.$('#tour').hidden);
+  let noiseThrew = false;
+  try { P.app.selectPattern('O2u'); } catch (e) { noiseThrew = e.name === 'RangeError'; }
+  check('noise start: no organism library (selector locked with a reason, selection refused, no pattern id)',
+    P.app.patternId === null && noiseThrew && [...P.d.querySelectorAll('#seg-pattern button')].every((b) => b.disabled) && !P.$('[data-pattern=locked]').hidden);
 } catch (e) {
   failures++;
   log(`FAIL  unexpected exception: ${e && e.stack ? e.stack : e}`, 'fail');

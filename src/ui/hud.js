@@ -27,6 +27,11 @@ export class Hud {
     this.radius.textContent = String(radius);
   }
 
+  /** Immediate pattern-name update (the periodic update() also sets it). */
+  setPattern(label) {
+    this.pattern.textContent = label || '-';
+  }
+
   setNote(text) {
     this.note.textContent = text;
     this.note.hidden = !text;
