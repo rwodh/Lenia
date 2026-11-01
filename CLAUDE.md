@@ -24,8 +24,9 @@ and run tests.
 ## Working rules
 
 - Inspect the actual code before making claims about it. Cite file paths; do not rely on memory of this file or the docs.
-- Never describe software-renderer results as hardware-GPU results (`DECISIONS.md` 14). All recorded browser results so far
-  are from a software renderer.
+- Never describe software-renderer results as hardware-GPU results (`DECISIONS.md` 14), and record the exact renderer string
+  with every browser result. Earlier results were from a software renderer (ANGLE with SwiftShader); the results recorded from
+  31 Oct 2026 report an AMD Radeon through ANGLE/Direct3D 11 (see `progress.md`). Claim no more than the string shows.
 - Patterns are never rescaled (`DECISIONS.md` 10). Do not change Orbium data; its RLE hash is checked by a unit test.
 - Any change to simulation maths, shaders, or parameters needs a matching test, and the GPU parity page must still pass.
 
