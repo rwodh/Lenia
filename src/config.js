@@ -59,6 +59,8 @@ export const UI_RANGES = Object.freeze({
  * seed pattern, which already evaporates at 0.014 when started there (patterns.test.js).
  */
 export const EXPERIMENT = Object.freeze({
+  /** The tour runs on this library pattern: it selects it when it opens and leaves it selected. */
+  patternId: 'O2u',
   param: 'sigma',
   targetValue: 0.011,
   observeSteps: 60,

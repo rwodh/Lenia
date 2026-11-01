@@ -6,7 +6,6 @@ import { showFatal } from './ui/fatal.js';
 import { safeLocalStorage } from './ui/storage.js';
 import { parseQueryParams } from './simulation/params.js';
 import { planStartup } from './simulation/startup.js';
-import { ORBIUM_O2U } from './simulation/patterns.js';
 
 const canvas = document.getElementById('lenia-canvas');
 const hud = new Hud(document);
@@ -22,7 +21,8 @@ try {
     hud,
     params: startup.params,
     initialState: startup.initialState,
-    patternLabel: orbium ? `${ORBIUM_O2U.name} (${ORBIUM_O2U.id})` : 'Random noise (seeded)',
+    patternLabel: startup.label,
+    patternId: startup.patternId,
     onFatal: (e) => showFatal(fatalPanel, e),
   });
   app.start();

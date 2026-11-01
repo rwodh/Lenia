@@ -8,9 +8,9 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 |---|---|
 | 1 Foundation | Done |
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium seed is shown at startup (one organism only) |
-| 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour. Not done: seed library, zoom and pan, seed placement |
+| 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector. Not done: more patterns, zoom and pan, seed placement |
 | 4 Visualization | Partial: two colour maps (Observatory, Viridis), Running/Paused indicator, generation, pattern, world, render rate. No trails, no heatmap |
-| 5 Quality | Partial: 60 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no hardware performance calibration |
+| 5 Quality | Partial: 74 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Not started: localhost dev server only; CSP is a meta tag. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
@@ -18,8 +18,8 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | Feature | Status |
 |---|---|
 | Real-time Lenia simulation | Implemented |
-| Emergent organisms | One verified organism (Orbium); random noise otherwise |
-| Seed organism library | Not implemented (one seed, chosen automatically) |
+| Emergent organisms | Two verified organisms (O2u, O2b; both Orbium); random noise otherwise |
+| Seed organism library | Partial: two verified organisms, O2u and O2b, selectable (decision 21); no further patterns |
 | Interactive parameter controls | mu, sigma, T live; radius and grid fixed by design (decision 19); grid, radius, seed also via URL |
 | Real-time GPU processing | Implemented (WebGL2 fragment shader, ping-pong textures) |
 | Pause, step, reset, restart | Implemented (Reset = initial state and parameters; restart = Reset while playing) |
@@ -33,8 +33,12 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | Placing seeds (proposal objective) | Not implemented |
 
 ## Verified facts
-Environment for every browser result: headless Chromium on a software renderer (ANGLE with SwiftShader, one core). No result
-below comes from a hardware GPU. "In repo" means `npm test` or a page under `tests/browser/` reproduces it; "ad hoc" means a script
+Environment. Items 1 to 13 were recorded earlier in headless Chromium on a software renderer (ANGLE with SwiftShader, one
+core); none of those results came from a hardware GPU. Items 14 onward were recorded on 31 Oct 2026 in the Claude desktop app's
+built-in browser, whose WebGL context reports the renderer string `ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001681) Direct3D11
+vs_5_0 ps_5_0, D3D11)` (read from `caps.renderer` and from `WEBGL_debug_renderer_info`). That string is the only evidence about
+the GPU: the driver, browser version and power state were not recorded, and the earlier "software renderer" wording must not be
+read as applying to items 14 onward (decision 14). "In repo" means `npm test` or a page under `tests/browser/` reproduces it; "ad hoc" means a script
 outside the repo produced it.
 
 1. **Maths matches the canonical sources** (kernel core, single-ring shell, normalisation, growth, hard-clip update, dt = 1/T,
@@ -44,7 +48,7 @@ outside the repo produced it.
    decoder's output. In repo: `tests/unit/patterns.test.js` (hash and fixture). The script that built the fixture is not in the repo.
 3. **Sigma sources.** Upstream `O2u` 0.015; upstream `O2b` 0.014 (also in the older JS catalogue); older JS entry `O2(a)` 0.017;
    paper Figure 6 and 7 captions 0.016. Checked against the pinned clone and the paper.
-4. **Unit tests:** 60 pass (`npm test`). Includes decoder fuzzing, placement, startup planning, CPU behaviour (sigma 0.015
+4. **Unit tests:** 60 passed when this list was first written; 74 pass now (`npm test`, 31 Oct 2026; the 14 new ones cover the library, see item 14). Includes decoder fuzzing, placement, startup planning, CPU behaviour (sigma 0.015
    persists and moves; sigma 0.014 evaporates *from the seed*), step scheduling, slider ranges, storage helpers and the tour
    experiment evidence (item 11).
 5. **GPU against CPU reference.** In repo: `tests/browser/orbium-gpu.html`.
@@ -84,12 +88,46 @@ outside the repo produced it.
 13. **Layout** (headless Chromium screenshots, 1280x760 and 390x844): no horizontal overflow; on the narrow layout the canvas,
     the controls and the tour sheet fit together after a fix found by looking at the first screenshot. Bangla text rendered
     with the sandbox's fallback font only.
+14. **Library data (O2b).** Upstream `O2b` ("Orbium bicaudatus") at the same pinned commit: parameters R 13, T 10, m 0.15, s 0.014;
+    RLE of 462 characters, SHA-256 `382578f5a58d05c5eae95bf6e44306e8b5eade02e20d8ca416657c389b2660e5`; decodes to 20x20 with
+    207 non-zero cells, level sum 18222 (mass 71.4588). The reference `tests/fixtures/orbium-o2b-reference.json` was produced by
+    running the literal upstream decoder source (`Board.rle2arr` and its helpers from `Python/LeniaND.py`) with only numpy's
+    `asarray` replaced by an identity stub (numpy is not installed); our decoder agrees with it on all 400 cells. The script that
+    built it is not in the repo. mu, sigma and T of both patterns lie inside `UI_RANGES` and on slider steps. In repo:
+    `tests/unit/patterns.test.js`, `startup.test.js`, `ui-config.test.js`.
+15. **O2b on the CPU reference** (grid 64, in repo: `patterns.test.js`). At sigma 0.014 it persists (mass 69.2 at 100 steps from
+    71.46) and moves about 17 cells in 30 steps. Ad hoc: at sigma 0.012 and 0.013 it was gone by 100 steps.
+16. **GPU, library patterns** (in repo: `orbium-gpu.html`, AMD renderer above, float32 state, grid 64). Both patterns: the seed reads
+    back exactly (error 0); GPU against CPU after 1 / 5 / 20 steps is 6.6e-7 / 1.4e-6 / 2.5e-6 for O2u and 6.0e-7 / 1.9e-6 / 7.1e-6
+    for O2b (tolerance 1e-3); 1000 steps keep values in [0,1]; mass ratio 0.922 to 0.931 (O2u) and 0.961 to 0.969 (O2b); shape
+    correlation at least 0.935 and 0.934; motion 0.614 and 0.593 cells/step; observables against the CPU: worst mass difference
+    0.0080 / 0.0033, worst centroid difference 0.0019 / 0.0026 cells; grid 128 and grid 64 agree exactly; no WebGL errors.
+    **Pointwise GPU against CPU through step 200** is 3.57e-5 for O2u (asserted) but 1.70e-3 for O2b (1.77e-4 at step 100), above the
+    1e-3 tolerance; that check is therefore not asserted for O2b (decision 23). Long-term pointwise equivalence is not claimed.
+17. **UI flow with the library** (in repo: `ui-flow.html`, same renderer, 64 checks pass). Selecting O2b puts the exact O2b seed on the GPU,
+    O2b's parameters, label, sliders and "(start: ...)" labels; Reset and `R` restore O2b, not Orbium; play/pause and speed are
+    kept; an unknown id is rejected; 25 O2u/O2b round trips leave the same simulation, kernel texture, state textures and program
+    in place, at most one pending animation frame and no GL error; the tour started from O2b selects O2u, locks the selector, runs
+    through and ends on O2u; `?radius=10` locks the selector. A context loss and restore after selecting O2b re-seeds O2b with O2b's
+    parameters, but see the float16 note under "Unresolved". A bug was found by running this page: the first version of
+    `Tour.open()` selected the pattern while the tour's own status listener was already active and threw; it was fixed by selecting
+    before the tour is marked open.
 
 ## Unresolved or unverified
-- **No hardware-GPU run.** Real frame rates, precision, the R16F fallback and the `maxTapsPerStep` cap (200M, an estimate) are
-  untested. A 512 grid took about 2.5 s per step on the software renderer.
-- **GPU deviates about 4x more than a CPU float32 emulation.** The cause (shader `exp()`, fused multiply-add, tap order, or the
-  software renderer) was not isolated.
+- **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
+  or performance figure was taken (the built-in browser pane delivered animation frames at roughly 5 Hz while the pages ran, so
+  such numbers would not mean anything), and the `maxTapsPerStep` cap (200M, an estimate) and 2x speed remain untested. A 512 grid
+  took about 2.5 s per step on the earlier software renderer.
+- **After a context restore the state format was float16.** In `ui-flow.html` the app started with float32 state and, after a
+  `WEBGL_lose_context` loss and restore, `caps.stateFormat` was float16 (the seed then reads back with error up to 2.4e-4). The
+  restore path (`initGpu`, `createGLContext`) was not changed by the library work, but it was not run on the earlier commit
+  either, and the cause is unknown. This is the first time the R16F fallback has been exercised, and only by accident; its
+  accuracy for long runs is untested.
+- **GPU deviation is larger for O2b** (decision 23). The GPU's pointwise error against the CPU reference at step 200 is about 20
+  times that of a float32-accumulating CPU variant (ad hoc: 1.7e-3 against 8.4e-5), and the cause is not isolated.
+- **O2b is not covered by the tour, and its sensitivity to sigma has been probed only briefly** (item 15).
+- **GPU deviates about 4x more than a CPU float32 emulation** (O2u, earlier software-renderer measurement; about 20x for O2b at step
+  200 on the AMD renderer, see above). The cause (shader `exp()`, fused multiply-add, tap order, or the renderer) was not isolated.
 - **R = 14:** the unscaled pattern persists for 100 steps. Whether it is still a recognisable Orbium is unknown. The design
   treats only R = 13 as compatible.
 - **Reproducibility gap.** Items 6 to 9 and the fixture build came from scripts outside the repo. The repo contains only the
@@ -112,8 +150,8 @@ outside the repo produced it.
   real speed is lower. Not measured on hardware.
 
 ## Planned (not started)
-1. Real-hardware run and quality pass (frame rate, 2x speed, R16F fallback, the `maxTapsPerStep` cap); proofread the Bangla.
-2. Seed library with more verified patterns, and seed placement.
+1. Performance pass on real hardware (frame rate, 2x speed, R16F fallback and the float16-after-restore behaviour, the `maxTapsPerStep` cap); proofread the Bangla.
+2. More verified patterns beyond O2u and O2b, and seed placement.
 3. Zoom and pan.
 4. Motion trails and activity heatmap.
 5. Deployment: production hosting, security headers.

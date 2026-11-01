@@ -11,7 +11,7 @@ const sigmaText = (v) => v.toFixed(UI_RANGES.sigma.digits);
  * (no reload, no second loop). The steps' content is static markup in index.html; this class only
  * shows one step at a time, highlights the real control being discussed, drives the experiment through
  * the App's public methods, and enables "Next" when the user has actually done what the step asks.
- * Leaving the tour (finish or skip) resets Orbium and its parameters and plays, so the Explorer starts clean.
+ * Leaving the tour (finish or skip) selects Orbium unicaudatus, resets it and its parameters, and plays, so the Explorer starts clean.
  */
 export class Tour {
   constructor(app, { available, storage, document: doc = document }) {
@@ -59,12 +59,15 @@ export class Tour {
 
   open() {
     if (!this.available || this.isOpen) return;
+    this.root.hidden = false; // visible first, so the selector (which follows the tour's visibility) renders locked
+    // The experiment is written for this organism, whatever was selected before. isOpen is still false here on purpose:
+    // selecting emits a status event, and update() has no step to draw until goTo() below sets one.
+    this.app.selectPattern(EXPERIMENT.patternId);
     this.isOpen = true;
-    this.root.hidden = false;
     this.goTo(0);
   }
 
-  /** Leave the tour: remember completion, return the Explorer to a clean running start. */
+  /** Leave the tour: remember completion, return the Explorer to a clean running start on the tour's organism. */
   finish() {
     if (!this.isOpen) return;
     this.isOpen = false;
@@ -72,7 +75,7 @@ export class Tour {
     this.setSpot(null);
     this.setModal(false);
     markTourCompleted(this.storage, TOUR_STORAGE_KEY);
-    this.app.reset();
+    this.app.selectPattern(EXPERIMENT.patternId); // restarts it exactly like reset(), and leaves the tour's organism selected
     this.app.play();
     this.doc.getElementById('btn-play').focus({ preventScroll: true });
   }

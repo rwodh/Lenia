@@ -4,25 +4,28 @@ import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES } from './config.js
 import { Renderer } from './render/renderer.js';
 import { LeniaSimulation } from './simulation/lenia.js';
 import { normalizeParams } from './simulation/params.js';
+import { planPattern } from './simulation/startup.js';
 import { planFrameSteps, MAX_PENDING_STEPS } from './simulation/scheduler.js';
 
 /**
  * Owns the GPU resources and the single animation loop. Parameters must already be
  * normalised; `initialState` is the Float32Array (gridSize^2) the simulation starts from
- * (see simulation/startup.js). `onFatal(error)` is called once if the app cannot continue.
+ * (see simulation/startup.js). `patternId` is the library pattern being shown, or null for the noise start (which has
+ * no library: its kernel radius is not the patterns'). `onFatal(error)` is called once if the app cannot continue.
  *
  * User-facing state (play/pause, speed, live parameters, palette) lives here; the UI in src/ui/
  * only calls the methods below and listens through onStatus(). The loop is never duplicated:
  * pause/step/reset only change flags and queued work that the one loop consumes.
  */
 export class App {
-  constructor({ canvas, hud, params, initialState, patternLabel = '', onFatal }) {
+  constructor({ canvas, hud, params, initialState, patternLabel = '', patternId = null, onFatal }) {
     this.canvas = canvas;
     this.hud = hud;
     this.baseParams = Object.freeze({ ...params }); // what Reset restores
     this.params = { ...params }; // live; shared by reference with the simulation, which reads mu/sigma/timeSteps every step
     this.initialState = initialState;
     this.patternLabel = patternLabel;
+    this.patternId = patternId;
     this.onFatal = onFatal;
 
     this.paused = false;
@@ -108,6 +111,23 @@ export class App {
     this.emit();
   }
 
+  /**
+   * Show library pattern `id`: it becomes what Reset restores (its own initial state, parameters and label), and the
+   * simulation restarts from it through the same path as reset(). Play/pause and speed are kept. Selecting the pattern
+   * already shown restarts it. Throws if there is no library here (noise start) or the id is unknown.
+   * One state upload: the kernel texture and the ping-pong targets are reused, since every pattern has the same radius.
+   */
+  selectPattern(id) {
+    if (this.patternId === null) throw new RangeError('this world has no pattern library (it does not use the patterns\' kernel radius)');
+    const plan = planPattern(id, this.baseParams);
+    this.baseParams = Object.freeze({ ...plan.params });
+    this.initialState = plan.initialState; // also what a context restore re-uploads
+    this.patternLabel = plan.label;
+    this.patternId = plan.pattern.id;
+    this.hud.setPattern(plan.label);
+    this.reset();
+  }
+
   /** Set a live parameter (mu, sigma, timeSteps). Validated by normalizeParams, then limited to the slider range. Returns the value in effect. */
   setParam(key, value) {
     const range = UI_RANGES[key];
@@ -144,6 +164,7 @@ export class App {
       palette: this.palette,
       gridSize: this.sim ? this.sim.size : this.params.gridSize,
       patternLabel: this.patternLabel,
+      patternId: this.patternId,
     };
   }
 

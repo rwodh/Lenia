@@ -1,9 +1,12 @@
 import { normalizeParams } from './params.js';
-import { ORBIUM_O2U } from './patterns.js';
+import { ORBIUM_O2U, getPattern } from './patterns.js';
 import { decodeRle } from './rle.js';
 import { placePatternCentred, randomDiscSeed } from './seed.js';
 
 const PATTERN_PARAM_KEYS = ['radius', 'timeSteps', 'mu', 'sigma'];
+
+/** Text shown for a pattern in the status panel, e.g. "Orbium unicaudatus (O2u)". */
+export const patternLabel = (pattern) => `${pattern.name} (${pattern.id})`;
 
 /** Which of the pattern's required parameters differ from `params`. Empty array = compatible. */
 export function patternMismatches(params, pattern) {
@@ -22,7 +25,7 @@ export function patternMismatches(params, pattern) {
  * this project never rescales patterns, so if the request would change any of them (for example
  * ?radius=10) Orbium is NOT shown; the previous random-noise start is used instead and `notes` says why.
  *
- * Returns { kind: 'orbium' | 'noise', params, initialState, notes }.
+ * Returns { kind: 'orbium' | 'noise', patternId, label, params, initialState, notes }; patternId is null for noise.
  */
 export function planStartup(raw = {}) {
   const orbium = normalizeParams({ ...ORBIUM_O2U.params, ...raw });
@@ -32,6 +35,8 @@ export function planStartup(raw = {}) {
     const pattern = decodeRle(ORBIUM_O2U.rle);
     return {
       kind: 'orbium',
+      patternId: ORBIUM_O2U.id,
+      label: patternLabel(ORBIUM_O2U),
       params: orbium.params,
       initialState: placePatternCentred(orbium.params.gridSize, pattern),
       notes: orbium.adjustments,
@@ -43,8 +48,34 @@ export function planStartup(raw = {}) {
   const have = mismatches.map((m) => `${m.key}=${m.have}`).join(', ');
   return {
     kind: 'noise',
+    patternId: null,
+    label: 'Random noise (seeded)',
     params,
     initialState: randomDiscSeed(params.gridSize, { radiusFraction: 0.2, seed: params.seed }),
     notes: [...adjustments, `Orbium needs ${need} but this URL gives ${have}: showing random noise instead.`],
+  };
+}
+
+/**
+ * Plan loading library pattern `id` into a running app whose current base parameters are `baseParams`
+ * (grid size and seed are kept). Pure, no GL. Throws RangeError for an unknown id, or when the pattern's
+ * parameters (radius above all) are not usable here: the kernel is built once from the app's radius and
+ * patterns are never rescaled, so a pattern whose radius differs from the running one cannot be shown.
+ *
+ * Returns { pattern, params, initialState, label }; `params` is the pattern's own parameter set.
+ */
+export function planPattern(id, baseParams) {
+  const pattern = getPattern(id);
+  const { params } = normalizeParams({ ...baseParams, ...pattern.params });
+  const bad = patternMismatches(params, pattern);
+  if (bad.length || baseParams.radius !== pattern.params.radius) {
+    const need = pattern.params.radius;
+    throw new RangeError(`pattern ${pattern.id} needs radius ${need}, but this world uses radius ${baseParams.radius}`);
+  }
+  return {
+    pattern,
+    params,
+    initialState: placePatternCentred(params.gridSize, decodeRle(pattern.rle)),
+    label: patternLabel(pattern),
   };
 }

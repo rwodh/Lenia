@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { planStartup, patternMismatches } from '../../src/simulation/startup.js';
+import { planStartup, planPattern, patternLabel, patternMismatches } from '../../src/simulation/startup.js';
 import { parseQueryParams } from '../../src/simulation/params.js';
-import { ORBIUM_O2U } from '../../src/simulation/patterns.js';
+import { ORBIUM_O2U, ORBIUM_O2B, PATTERN_LIBRARY } from '../../src/simulation/patterns.js';
 import { randomDiscSeed } from '../../src/simulation/seed.js';
 import { LIMITS, DEFAULT_PARAMS } from '../../src/config.js';
 
@@ -106,4 +106,66 @@ test('hostile or garbage query input still yields a safe, runnable plan', () => 
     assert.ok(plan.params.radius >= LIMITS.radius.min && plan.params.radius <= LIMITS.radius.max, q);
     assert.ok(plan.initialState.every((v) => v >= 0 && v <= 1), q);
   }
+});
+
+// ---- planPattern: loading a library pattern into a running world ----
+
+test('default startup names O2u: patternId and label are set, noise start has no pattern', () => {
+  const plan = planStartup({});
+  assert.equal(plan.patternId, 'O2u');
+  assert.equal(plan.label, patternLabel(ORBIUM_O2U));
+  assert.equal(plan.label, 'Orbium unicaudatus (O2u)');
+  const noise = planStartup({ radius: 10 });
+  assert.equal(noise.patternId, null);
+  assert.equal(noise.label, 'Random noise (seeded)');
+});
+
+test('planPattern: each library pattern yields its own parameters, label and exact centred seed', () => {
+  const base = planStartup({}).params;
+  for (const p of PATTERN_LIBRARY) {
+    const plan = planPattern(p.id, base);
+    assert.equal(plan.pattern, p);
+    assert.equal(plan.label, patternLabel(p));
+    for (const k of ['radius', 'timeSteps', 'mu', 'sigma']) assert.equal(plan.params[k], p.params[k], `${p.id} ${k}`);
+    assert.equal(plan.params.gridSize, base.gridSize, 'grid size is kept');
+    assert.equal(plan.params.seed, base.seed, 'seed is kept');
+    assert.deepEqual(patternMismatches(plan.params, p), []);
+    assert.equal(plan.initialState.length, base.gridSize ** 2);
+    assert.ok(plan.initialState instanceof Float32Array);
+  }
+});
+
+test('planPattern: O2b seed has the O2b mass and differs from O2u; O2u matches the default startup state exactly', () => {
+  const base = planStartup({}).params;
+  const b = planPattern('O2b', base), u = planPattern('O2u', base);
+  assert.ok(Math.abs(sum(b.initialState) - 18222 / 255) < 1e-3, `O2b mass ${sum(b.initialState)}`);
+  assert.ok(Math.abs(sum(u.initialState) - 19600 / 255) < 1e-3);
+  assert.deepEqual(Array.from(u.initialState), Array.from(planStartup({}).initialState));
+  assert.notDeepEqual(Array.from(b.initialState), Array.from(u.initialState));
+  assert.equal(b.params.sigma, 0.014);
+  assert.equal(u.params.sigma, 0.015);
+});
+
+test('planPattern: independent of earlier plans (fresh copies, no shared state)', () => {
+  const base = planStartup({}).params;
+  const first = planPattern('O2b', base);
+  const snapshot = Array.from(first.initialState);
+  first.initialState.fill(0.5);
+  assert.deepEqual(Array.from(planPattern('O2b', base).initialState), snapshot);
+});
+
+test('planPattern: works on every supported grid size', () => {
+  for (const grid of LIMITS.gridSizes) {
+    const base = planStartup({ gridSize: grid }).params;
+    for (const p of PATTERN_LIBRARY) assert.equal(planPattern(p.id, base).initialState.length, grid * grid, `${p.id} grid ${grid}`);
+  }
+});
+
+test('planPattern: refuses a world whose radius is not the pattern radius, and unknown ids (no rescaling)', () => {
+  const noise = planStartup({ radius: 10 }).params;
+  assert.equal(noise.radius, 10);
+  for (const p of PATTERN_LIBRARY) assert.throws(() => planPattern(p.id, noise), /needs radius 13/);
+  const base = planStartup({}).params;
+  assert.throws(() => planPattern('nope', base), RangeError);
+  assert.throws(() => planPattern(undefined, base), RangeError);
 });

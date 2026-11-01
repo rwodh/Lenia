@@ -18,9 +18,10 @@
  *   0.015  upstream catalogue Python/animals.json "O2u" (this entry; its stored cells match it)
  *   0.016  Figure 6/7 captions of Chan (2019), arXiv:1812.05433
  *   0.017  older upstream JavaScript catalogue (JavaScript/Lenia-LifeForms.js "O2(a)")
- *   0.014  upstream "O2b" (Orbium bicaudatus) and third-party ports
+ *   0.014  upstream "O2b" (Orbium bicaudatus; its own stored value, see ORBIUM_O2B below) and third-party ports
  * We use 0.015 because it is the value stored with this exact pattern. The organism is sensitive
- * to sigma (see tests/unit/patterns.test.js): 0.015 and 0.016 persist, 0.014 evaporates.
+ * to sigma (see tests/unit/patterns.test.js): 0.015 and 0.016 persist, 0.014 evaporates (for the O2u cells; O2b
+ * is a different pattern and persists at its own 0.014).
  *
  * The pattern is defined at kernel radius R = 13 cells. It is NOT scale-free in this project:
  * it must be simulated with radius 13. Do not rescale it; changing radius changes the organism.
@@ -28,6 +29,7 @@
 export const ORBIUM_O2U = Object.freeze({
   id: 'O2u',
   name: 'Orbium unicaudatus',
+  description: 'A single-tailed glider, the best-known Lenia organism. It travels steadily across the grid.',
   source: Object.freeze({
     repository: 'https://github.com/Chakazul/Lenia',
     commit: 'adfc542939266de7f4bb7ebb552e8499701ee107',
@@ -41,3 +43,37 @@ export const ORBIUM_O2U = Object.freeze({
   /** Upstream RLE, verbatim (LeniaND.py format: '$' ends a row, '!' ends the pattern). */
   rle: '7.MD6.qL$6.pKqEqFURpApBRAqQ$5.VqTrSsBrOpXpWpTpWpUpCrQ$4.CQrQsTsWsApITNPpGqGvL$3.IpIpWrOsGsBqXpJ4.LsFrL$A.DpKpSpJpDqOqUqSqE5.ExD$qL.pBpTT2.qCrGrVrWqM5.sTpP$.pGpWpD3.qUsMtItQtJ6.tL$.uFqGH3.pXtOuR2vFsK5.sM$.tUqL4.GuNwAwVxBwNpC4.qXpA$2.uH5.vBxGyEyMyHtW4.qIpL$2.wV5.tIyG3yOxQqW2.FqHpJ$2.tUS4.rM2yOyJyOyHtVpPMpFqNV$2.HsR4.pUxAyOxLxDxEuVrMqBqGqKJ$3.sLpE3.pEuNxHwRwGvUuLsHrCqTpR$3.TrMS2.pFsLvDvPvEuPtNsGrGqIP$4.pRqRpNpFpTrNtGtVtStGsMrNqNpF$5.pMqKqLqRrIsCsLsIrTrFqJpHE$6.RpSqJqPqVqWqRqKpRXE$8.OpBpIpJpFTK!',
 });
+
+/**
+ * ORBIUM_O2B is the upstream catalogue entry "O2b" (Orbium bicaudatus), copied programmatically, never retyped,
+ * from the same pinned commit and file as O2u above (see THIRD_PARTY_NOTICES.md).
+ *
+ * Upstream parameter record: R=13, T=10, b="1", m=0.15, s=0.014, kn=1, gn=1 (the same kernel and growth definitions
+ * as O2u; only sigma differs, 0.014 instead of 0.015). Like O2u it is defined at R = 13 and is never rescaled.
+ */
+export const ORBIUM_O2B = Object.freeze({
+  id: 'O2b',
+  name: 'Orbium bicaudatus',
+  description: 'A two-tailed relative of Orbium. It runs at a slightly narrower growth width than the single-tailed glider.',
+  source: Object.freeze({
+    repository: 'https://github.com/Chakazul/Lenia',
+    commit: 'adfc542939266de7f4bb7ebb552e8499701ee107',
+    file: 'Python/animals.json',
+    code: 'O2b',
+    license: 'MIT',
+    copyright: 'Copyright (c) 2018 Bert Chan',
+  }),
+  params: Object.freeze({ radius: 13, timeSteps: 10, mu: 0.15, sigma: 0.014 }),
+  /** Upstream RLE, verbatim (LeniaND.py format: '$' ends a row, '!' ends the pattern). */
+  rle: '13.pK$14.qV$6.VpA.MpEpKpITqV$4.BpPpNrIrEqDpWpOpLpUqNvT$4.IqRrNsPsKqHJ3.GqOuC$4.TrLsTrPrLpS6.uUD$3.SpWqNrBqLpRqPqE6.vA$2.FpTpMLpHqPqHrVsPrS5.qUqA$K.pCpRG.ErFsRsVuSuPqN4.CrR$pA.pTU3.rWuBuRvXwTwKpF4.rCH$.tPqHH3.qFvAwUwVyJyKwNL2.DqLR$.pGsGA4.vPxSyDxE2yOuHS.XqJT$2.xIE4.sCyHyOvLvRyFxCsGpVpXqGP$2.VsU4.DxQyOvVuSwDwQuBrMqSqCF$3.vG5.tEyKwVvIvKvMtVrXqTpM$4.sU4.qFvDwMvNuUuDsUrKqDO$4.qCrDJ2.pPsKuGuHtOsQrNqKpC$5.pTqTpVpNqFrJsGsKrVrDqFpFD$6.QqCqJqPqVqXqRqHpOTC$8.LWpFpEXPG!',
+});
+
+/** The pattern library: a static, frozen registry. Ids are looked up here only; nothing is loaded from the network. */
+export const PATTERN_LIBRARY = Object.freeze([ORBIUM_O2U, ORBIUM_O2B]);
+
+/** The pattern with this id. Throws RangeError for an unknown id. */
+export function getPattern(id) {
+  const pattern = PATTERN_LIBRARY.find((p) => p.id === id);
+  if (!pattern) throw new RangeError(`unknown pattern "${id}"`);
+  return pattern;
+}
