@@ -9,6 +9,7 @@ import { normalizeParams } from '../../src/simulation/params.js';
 import { buildKernel } from '../../src/simulation/kernel.js';
 import { stepReference } from '../../src/simulation/reference.js';
 import { LIMITS, UI_RANGES } from '../../src/config.js';
+import { computeObservables, torusDistance } from '../../src/simulation/observables.js';
 
 const reference = JSON.parse(readFileSync(new URL('../fixtures/orbium-o2u-reference.json', import.meta.url), 'utf8'));
 const referenceO2b = JSON.parse(readFileSync(new URL('../fixtures/orbium-o2b-reference.json', import.meta.url), 'utf8'));
@@ -91,22 +92,10 @@ test('placement: odd leftover uses floor, and invalid or oversized requests are 
 });
 
 // Behavioural regression on the CPU reference (the same math the GPU shader is verified against).
-function circularCentroid(state, n) {
-  let m = 0, cs = 0, sn = 0, cs2 = 0, sn2 = 0;
-  for (let y = 0; y < n; y++) {
-    for (let x = 0; x < n; x++) {
-      const v = state[y * n + x];
-      m += v;
-      cs += v * Math.cos((2 * Math.PI * x) / n); sn += v * Math.sin((2 * Math.PI * x) / n);
-      cs2 += v * Math.cos((2 * Math.PI * y) / n); sn2 += v * Math.sin((2 * Math.PI * y) / n);
-    }
-  }
-  return { mass: m, x: ((Math.atan2(sn, cs) / (2 * Math.PI)) * n + n) % n, y: ((Math.atan2(sn2, cs2) / (2 * Math.PI)) * n + n) % n };
-}
-const torusDist = (a, b, n) => {
-  const dx = Math.abs(a.x - b.x), dy = Math.abs(a.y - b.y);
-  return Math.hypot(Math.min(dx, n - dx), Math.min(dy, n - dy));
-};
+// Mass and the circular centroid come from the shared observables module (its consistency with the earlier per-cell
+// formula is checked in tests/unit/observables.test.js).
+const circularCentroid = (state, n) => { const o = computeObservables(state, n); return { mass: o.mass, x: o.centroid.x, y: o.centroid.y }; };
+const torusDist = torusDistance;
 
 test('O2u at the verified sigma 0.015 persists and translates; sigma 0.014 (a value quoted elsewhere) evaporates', () => {
   // The organism moves ~0.6 cells/step, so on a 64-cell torus only short windows give an unambiguous displacement:

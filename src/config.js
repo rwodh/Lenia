@@ -67,5 +67,25 @@ export const EXPERIMENT = Object.freeze({
   watchSteps: 60,
 });
 
+/**
+ * Observatory: read-only measurements of the simulation state (src/simulation/observables.js), sampled from the GPU
+ * asynchronously (src/gl/readback.js). The values below were approved by the owner on 3 Nov 2026; their evidence is in
+ * DECISIONS.md 25-26.
+ */
+export const OBSERVATORY = Object.freeze({
+  /** A cell counts towards "active area" when its value is strictly greater than this. */
+  activeThreshold: 0.01,
+  /** Below this total, the field has no mass to locate: the centroid is undefined. */
+  minMass: 1e-3,
+  /** Circular concentration (0..1, per axis) below which the centroid is reported as not meaningful. */
+  minConcentration: 0.5,
+  /** Minimum time between readback submissions; larger grids sample less often (more bytes, more CPU per sample). */
+  sampleIntervalMs: 250,
+  sampleIntervalLargeMs: 500,
+  largeGridFrom: 512,
+  /** Samples kept for the chart (a ring buffer; older samples are dropped). */
+  historyLength: 240,
+});
+
 export const PALETTES = Object.freeze(['observatory', 'viridis']);
 export const TOUR_STORAGE_KEY = 'lenia.tour.v1';

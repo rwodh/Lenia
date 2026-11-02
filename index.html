@@ -167,6 +167,19 @@
           </dl>
         </section>
 
+        <section class="card" id="card-observatory" aria-labelledby="h-observatory">
+          <h2 id="h-observatory">Observatory</h2>
+          <dl class="facts">
+            <div><dt>Mass</dt><dd data-obs="mass">-</dd></div>
+            <div><dt>Active area</dt><dd data-obs="active">-</dd></div>
+            <div><dt>Centroid (x, y)</dt><dd data-obs="centroid">-</dd></div>
+            <div><dt>Measured at</dt><dd data-obs="sample">-</dd></div>
+          </dl>
+          <canvas class="obs-chart" data-obs="chart" role="img" aria-label="Mass by generation: no samples yet"></canvas>
+          <p class="hint" data-obs="summary">Mass by generation: no samples yet.</p>
+          <p class="hint">Mass: sum of all cell values. Active area: cells whose value is above 0.01. Centroid: circular mean position of the values on the wrapping grid, shown only when they are concentrated. Read from the GPU at most every 250 ms (500 ms at grid 512), and not at all while the GPU is behind; each value describes the generation shown under "Measured at".</p>
+        </section>
+
         <section class="card" id="card-params" aria-labelledby="h-params">
           <h2 id="h-params">Parameters</h2>
           <p class="lede">Change them while it runs. <span lang="bn" class="bn">চলন্ত অবস্থাতেই বদলে দেখুন।</span></p>

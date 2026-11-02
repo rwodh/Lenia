@@ -1,5 +1,5 @@
 // Runs in a real WebGL2 browser. Verifies the GPU shaders against the CPU reference,
-// the display colour map, and shader-error reporting. Prints PASS/FAIL per check.
+// the display colour map, shader-error reporting and the asynchronous state readback. Prints PASS/FAIL per check.
 import { createGLContext } from '../../src/gl/context.js';
 import { createProgram } from '../../src/gl/program.js';
 import { LeniaSimulation } from '../../src/simulation/lenia.js';
@@ -9,6 +9,7 @@ import { buildKernel } from '../../src/simulation/kernel.js';
 import { stepReference } from '../../src/simulation/reference.js';
 import { randomDiscSeed } from '../../src/simulation/seed.js';
 import { LeniaError } from '../../src/errors.js';
+import { AsyncReadback } from '../../src/gl/readback.js';
 
 const out = document.getElementById('result');
 const lines = [];
@@ -83,6 +84,71 @@ try {
   check('state 1 maps to viridis(1) yellow', near(one, [252, 231, 33], 6), `rgb=${one.slice(0, 3)}`);
   check('no pending GL error after rendering', gl.getError() === gl.NO_ERROR);
   sim.dispose(); renderer.dispose();
+
+  // 4. Asynchronous readback (Observatory): exact copy, tag = generation at submission, one request in flight,
+  //    float32 and float16 state formats. Polling uses setTimeout here; nothing waits on the GPU.
+  const waitResult = async (rb) => {
+    for (let i = 0; i < 2000; i++) { const r = rb.poll(); if (r) return r; await new Promise((ok) => setTimeout(ok, 0)); }
+    return null;
+  };
+  const formats = [['float32', caps.stateFormat]];
+  if (caps.stateFormat.name === 'float32') formats.push(['float16', { name: 'float16', internalFormat: 'R16F' }]);
+  for (const [fname, stateFormat] of formats) {
+    for (const n of [64, 128]) {
+      const { params: p } = normalizeParams({ gridSize: n, radius: 13, seed: 9 });
+      const s = new LeniaSimulation(gl, { ...caps, stateFormat }, p);
+      s.reset(randomDiscSeed(n, { radiusFraction: 0.4, seed: 9 }));
+      for (let t = 0; t < 3; t++) s.step();
+      const rb = new AsyncReadback(gl, n);
+      const before = s.readState(), tagGen = s.generation;
+      const queued = rb.request(s.stateFramebuffer, { generation: tagGen });
+      const second = rb.request(s.stateFramebuffer, { generation: -1 });
+      for (let t = 0; t < 5; t++) s.step(); // the state moves on after submission
+      const r = await waitResult(rb);
+      check(`readback ${fname} grid ${n}: one request in flight, result arrives without blocking`, queued && !second && !!r, `components=${rb.components}`);
+      check(`readback ${fname} grid ${n}: copy equals the state at submission exactly; tag = generation at submission`,
+        !!r && maxAbsDiff(r.state, before) === 0 && r.tag.generation === tagGen && s.generation === tagGen + 5,
+        r ? `maxAbsDiff=${maxAbsDiff(r.state, before)} tag=${r.tag.generation} now=${s.generation}` : 'no result');
+      rb.dispose(); s.dispose();
+    }
+  }
+  check('no pending GL error after readbacks', gl.getError() === gl.NO_ERROR);
+
+  // 5. Readback leaves the caller's bindings as they were (READ_FRAMEBUFFER, DRAW_FRAMEBUFFER, PIXEL_PACK_BUFFER),
+  //    also when a call inside request() throws, so later readPixels into client memory still works.
+  {
+    const { params: p } = normalizeParams({ gridSize: 64, radius: 13, seed: 4 });
+    const a = new LeniaSimulation(gl, caps, p), b = new LeniaSimulation(gl, caps, p);
+    a.reset(randomDiscSeed(64, { radiusFraction: 0.4, seed: 4 })); b.reset(randomDiscSeed(64, { radiusFraction: 0.3, seed: 8 }));
+    const expected = b.readState(); // before the sentinel pack buffer is bound (readState reads into client memory)
+    const sentinel = gl.createBuffer();
+    const bindings = () => [gl.getParameter(gl.READ_FRAMEBUFFER_BINDING), gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING), gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING)];
+    const same = (x, y) => x.every((v, i) => v === y[i]);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, a.stateFramebuffer);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, sentinel);
+    const before = bindings();
+    const rb = new AsyncReadback(gl, 64);
+    rb.request(b.stateFramebuffer, { generation: 0 });
+    const afterRequest = bindings();
+    const r = await waitResult(rb);
+    const afterPoll = bindings();
+    check('readback restores READ/DRAW framebuffer and pixel-pack bindings after request() and poll()',
+      same(before, afterRequest) && same(before, afterPoll) && !!r && maxAbsDiff(r.state, expected) === 0);
+    const realReadPixels = gl.readPixels;
+    gl.readPixels = () => { throw new Error('forced failure'); };
+    let threw = false;
+    try { rb.request(b.stateFramebuffer, { generation: 1 }); } catch { threw = true; }
+    delete gl.readPixels; // back to the prototype's method
+    const afterThrow = bindings();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    let readOk = true;
+    try { b.readState(); } catch { readOk = false; }
+    check('readback restores bindings when a call inside request() throws; readState() still works and no GL error remains',
+      threw && gl.readPixels === realReadPixels && same(before, afterThrow) && !rb.busy && readOk && gl.getError() === gl.NO_ERROR);
+    rb.dispose(); a.dispose(); b.dispose(); gl.deleteBuffer(sentinel);
+  }
 } catch (e) {
   failures++;
   log(`FAIL  unexpected exception: ${e && e.stack ? e.stack : e}`, 'fail');

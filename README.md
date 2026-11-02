@@ -19,6 +19,12 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
   status label and the slider "(start: ...)" values, and restarts; Reset (and `R`) then restores the *selected* organism. Play/pause
   and speed are kept. The choice is locked while the guided tour is open (the tour always runs on O2u and ends with it selected) and
   when the URL changes the kernel radius (the noise start has no organisms).
+- **Observatory** (read-only): a card with live measurements of the running state: mass (sum of all cell values), active area
+  (cells above 0.01), the circular-mean centroid on the wrapping grid (shown only when the values are concentrated), the generation
+  each value describes, and a mass-by-generation chart of the last 240 samples. The state is copied from the GPU asynchronously, at
+  most every 250 ms (500 ms at grid 512) and not at all while the GPU is behind, so on a slow GPU or a large grid the card can
+  stay at "waiting"; nothing waits for the GPU inside the animation frame (the final copy of finished data is synchronous CPU work). Reset, a pattern switch and a context loss clear the
+  history. (The "Observatory" colour map below is unrelated: it is only a palette name.)
 - **Lenia Explorer**: Play/Pause, Step (exactly one step, paused only), Reset (initial organism *and* initial parameters; play state
   and speed are kept), Speed (0.25x to 2x of the 60 steps/s base rate), live sliders for mu, sigma and T, two colour maps
   (Observatory, Viridis; display only), status (Running/Paused, generation, pattern, world, render rate), and a
@@ -36,12 +42,15 @@ npm test         # unit tests (node:test, no dependencies)
 
 Browser GPU checks (the last line of each must read `ALL PASS`):
 
-- `http://localhost:8080/tests/browser/gpu-parity.html` - GPU shaders vs the CPU reference, colour map, shader-error reporting.
-- `http://localhost:8080/tests/browser/ui-flow.html` - drives the real page: Play/Pause/Step/Reset/parameters/speed/colour, organism selection and switching, a
+- `http://localhost:8080/tests/browser/gpu-parity.html` - GPU shaders vs the CPU reference, colour map, shader-error reporting, and the
+  asynchronous state readback (exact copy, tagged with the generation at submission, float32 and float16 states).
+- `http://localhost:8080/tests/browser/ui-flow.html` - drives the real page: Play/Pause/Step/Reset/parameters/speed/colour, organism selection and switching, the
+  Observatory (samples, generation tags, Reset/switch/restore clearing, GPU back-off, readback failure, narrow layout), a
   check that repeated interaction never creates a second animation loop, and the whole guided tour including its
   first-visit memory. Takes about a minute on a software GPU.
 - `http://localhost:8080/tests/browser/orbium-gpu.html` - each library organism on the GPU (O2u, then O2b with `[O2b]` lines): parity after
-  1/5/20 steps, a long run (`?long=1000`), observable parity with the CPU, and grid-size independence. Pointwise GPU-vs-CPU equality is
+  1/5/20 steps, a long run (`?long=1000`), observable parity with the CPU, grid-size independence, and the Observatory's sampled metrics
+  against the CPU reference. Pointwise GPU-vs-CPU equality is
   asserted over a short horizon only (200 steps for O2u, 20 for O2b); long-term correctness is judged by behavioural metrics, and long-term
   pointwise equivalence is not claimed (`DECISIONS.md` 23). Takes about a minute on a software GPU.
 
@@ -62,7 +71,8 @@ src/main.js                 bootstrap: parse params, create App, Controls and To
 src/app.js                  owns GPU resources + the single animation loop; play/pause/step/reset, live params, speed, palette
                             (fixed step rate, GPU back-pressure, context loss); UI listens via onStatus()
 src/config.js               limits and defaults
-src/gl/                     context + capability probe, program compile/link, textures/FBOs, frame fence
+src/gl/                     context + capability probe, program compile/link, textures/FBOs, frame fence,
+                            readback.js = asynchronous state copy (pixel-pack buffer + fence; never waits on the GPU)
 src/shaders/                GLSL ES 3.00 as JS string modules (no fetch, no bundler)
 src/simulation/             kernel/growth math, params validation, seeds, CPU reference  (pure JS, Node-testable)
                             patterns.js = verified upstream organism data and the two-entry registry (O2u, O2b); rle.js = strict decoder
@@ -70,11 +80,13 @@ src/simulation/             kernel/growth math, params validation, seeds, CPU re
                             lenia.js = GPU simulation (ping-pong R32F textures, one fragment pass per step)
 src/render/renderer.js      display pass (colour map, smooth magnification) + drawing-buffer sizing
 src/simulation/scheduler.js pure per-frame step planning (play / pause / single-step), unit-tested without WebGL
+src/simulation/observables.js  mass, active area, circular centroid + validity (pure; used by the app and the tests)
+src/simulation/sampler.js   when to sample (rate limit, GPU back-off, only on change) and the bounded sample history
 src/ui/                     hud.js (status), controls.js (panel wiring), tour.js (Guided Discovery), experiment.js (tour progress
-                            logic), storage.js (first-visit flag), fatal.js. All text via textContent, never innerHTML
+                            logic), storage.js (first-visit flag), observatory.js (Observatory card and chart), fatal.js. All text via textContent, never innerHTML
 tests/unit/                 Node tests for the pure modules (incl. decoder, pattern provenance, placement)
-tests/fixtures/             reference decode of O2u produced by the literal upstream decoder
-tests/browser/              in-browser GPU-vs-CPU parity check
+tests/fixtures/             reference decodes of O2u and O2b produced by the upstream decoder source
+tests/browser/              in-browser GPU checks (parity, organisms, readback) and the UI flow
 tools/serve.js              zero-dependency localhost dev server
 ```
 

@@ -1,5 +1,8 @@
 import { createGLContext } from './gl/context.js';
 import { FrameFence } from './gl/fence.js';
+import { AsyncReadback } from './gl/readback.js';
+import { computeObservables } from './simulation/observables.js';
+import { shouldSample, sampleIntervalFor, SampleHistory } from './simulation/sampler.js';
 import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES } from './config.js';
 import { Renderer } from './render/renderer.js';
 import { LeniaSimulation } from './simulation/lenia.js';
@@ -47,11 +50,25 @@ export class App {
     this.cleanFrames = 0;
     this.fence = null;
 
+    // Observatory (read-only): the state is copied to the CPU asynchronously, at most every 250 ms (500 ms at grid 512) and
+    // not while the GPU is behind (see requestSample), and measured there.
+    // `epoch` increases whenever the state is replaced (Reset, pattern switch, context loss); a readback submitted in an
+    // older epoch is discarded when it arrives. Samples are tagged with the generation at submission.
+    this.readback = null;
+    this.epoch = 0;
+    this.history = new SampleHistory();
+    this.observation = { status: 'waiting', reason: '', latest: null }; // status: 'waiting' | 'ok' | 'unavailable'
+    this.lastSampleMs = 0;
+    this.lastSampledGeneration = -1;
+
     this.frame = this.frame.bind(this);
 
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault(); // required, otherwise the browser will not try to restore the context
       this.stop();
+      this.readback = null; // its buffer and fence died with the context; dropped, not disposed
+      this.clearObservations();
+      this.setObservatoryUnavailable('graphics context lost');
       this.hud.setNote('Graphics context lost. Waiting for the browser to restore it...');
     });
     canvas.addEventListener('webglcontextrestored', () => {
@@ -79,7 +96,79 @@ export class App {
     this.renderer.setPalette(this.palette);
     this.sim = new LeniaSimulation(gl, caps, this.params);
     this.sim.reset(this.initialState);
+    this.readback = null;
+    this.clearObservations();
+    try {
+      this.readback = new AsyncReadback(gl, this.sim.size);
+    } catch (err) {
+      this.setObservatoryUnavailable(err.message); // the simulation does not depend on it
+    }
     this.handleResize();
+  }
+
+  // ---- Observatory (read-only; never changes the simulation) ------------------------------------
+
+  /** Forget all samples and any readback in flight: the state they describe has been replaced. */
+  clearObservations() {
+    this.epoch += 1;
+    this.history.clear();
+    this.readback?.cancel();
+    this.lastSampleMs = 0;
+    this.lastSampledGeneration = -1;
+    this.observation = this.readback?.failed
+      ? { status: 'unavailable', reason: this.readback.failed, latest: null }
+      : { status: 'waiting', reason: '', latest: null };
+  }
+
+  setObservatoryUnavailable(reason) {
+    this.observation = { status: 'unavailable', reason: String(reason || 'readback failed'), latest: null };
+    this.emit();
+  }
+
+  /** Called every frame. Never blocks: only asks whether the copy has completed, and measures it when it has. */
+  collectSample() {
+    const rb = this.readback;
+    if (!rb || rb.failed) return;
+    let result;
+    try {
+      result = rb.poll();
+    } catch (err) {
+      rb.failed = String(err?.message || err);
+    }
+    if (rb.failed) {
+      if (this.observation.status !== 'unavailable') this.setObservatoryUnavailable(rb.failed);
+      return;
+    }
+    if (!result || result.tag.epoch !== this.epoch) return; // nothing yet, or the state was replaced since the request
+    const o = computeObservables(result.state, this.sim.size);
+    this.history.push(result.tag.generation, o.mass);
+    this.observation = { status: 'ok', reason: '', latest: { generation: result.tag.generation, ...o } };
+    this.emit(); // the card shows a sample as soon as it is measured (rate-limited by requestSample)
+  }
+
+  /** Queue at most one readback of the current state, rate-limited, never while the GPU is behind. */
+  requestSample(now) {
+    const rb = this.readback;
+    const due = shouldSample({
+      available: !!rb && !rb.failed,
+      busy: !!rb && rb.busy,
+      gpuBound: this.gpuBound,
+      generation: this.sim.generation,
+      lastGeneration: this.lastSampledGeneration,
+      nowMs: now,
+      lastSampleMs: this.lastSampleMs,
+      intervalMs: sampleIntervalFor(this.sim.size),
+    });
+    if (!due) return;
+    try {
+      if (rb.request(this.sim.stateFramebuffer, { generation: this.sim.generation, epoch: this.epoch })) {
+        this.lastSampleMs = now;
+        this.lastSampledGeneration = this.sim.generation;
+      }
+    } catch (err) {
+      rb.failed = String(err?.message || err);
+    }
+    if (rb.failed) this.setObservatoryUnavailable(rb.failed);
   }
 
   // ---- user-facing controls -------------------------------------------------------------
@@ -108,6 +197,7 @@ export class App {
     this.sim?.reset(this.initialState);
     this.accumulatorMs = 0;
     this.pendingSteps = 0;
+    this.clearObservations();
     this.emit();
   }
 
@@ -165,6 +255,8 @@ export class App {
       gridSize: this.sim ? this.sim.size : this.params.gridSize,
       patternLabel: this.patternLabel,
       patternId: this.patternId,
+      observation: this.observation, // replaced (never mutated) on each change
+      historyVersion: this.history.version,
     };
   }
 
@@ -215,6 +307,7 @@ export class App {
       const dt = Math.min(now - this.lastTime, 250); // a long stall (hidden tab, breakpoint) must not trigger a burst
       this.lastTime = now;
       if (!this.paused) this.accumulatorMs += dt;
+      this.collectSample();
 
       if (this.fence.canSubmit()) {
         if (++this.cleanFrames >= LOOP.gpuBoundRecoveryFrames) this.gpuBound = false;
@@ -264,6 +357,7 @@ export class App {
     this.pendingSteps = plan.pendingSteps;
 
     this.renderer.draw(this.sim.stateTexture, this.sim.size);
+    this.requestSample(now); // only reached when the fence allowed this frame, i.e. the GPU is keeping up
     this.fence.mark();
 
     if (this.lastSubmitMs) {

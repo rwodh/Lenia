@@ -9,8 +9,8 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | 1 Foundation | Done |
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium seed is shown at startup (one organism only) |
 | 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector. Not done: more patterns, zoom and pan, seed placement |
-| 4 Visualization | Partial: two colour maps (Observatory, Viridis), Running/Paused indicator, generation, pattern, world, render rate. No trails, no heatmap |
-| 5 Quality | Partial: 74 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 4 Visualization | Partial: two colour maps (Observatory, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart). No trails, no heatmap, no speed estimate |
+| 5 Quality | Partial: 90 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Not started: localhost dev server only; CSP is a meta tag. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
@@ -24,7 +24,7 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | Real-time GPU processing | Implemented (WebGL2 fragment shader, ping-pong textures) |
 | Pause, step, reset, restart | Implemented (Reset = initial state and parameters; restart = Reset while playing) |
 | Zoom and pan | Not implemented |
-| Information display | Implemented: Running/Paused, generation, pattern, world and radius, render rate, float format, "GPU-limited" |
+| Information display | Implemented: Running/Paused, generation, pattern, world and radius, render rate, float format, "GPU-limited", and Observatory measurements |
 | Dynamic colour visualization | Partial: two fixed colour maps of cell state; no activity mapping |
 | Live parameter experimentation | Implemented for mu, sigma, T, plus the guided sigma experiment |
 | Motion trails | Not implemented |
@@ -48,7 +48,7 @@ outside the repo produced it.
    decoder's output. In repo: `tests/unit/patterns.test.js` (hash and fixture). The script that built the fixture is not in the repo.
 3. **Sigma sources.** Upstream `O2u` 0.015; upstream `O2b` 0.014 (also in the older JS catalogue); older JS entry `O2(a)` 0.017;
    paper Figure 6 and 7 captions 0.016. Checked against the pinned clone and the paper.
-4. **Unit tests:** 60 passed when this list was first written; 74 pass now (`npm test`, 31 Oct 2026; the 14 new ones cover the library, see item 14). Includes decoder fuzzing, placement, startup planning, CPU behaviour (sigma 0.015
+4. **Unit tests:** 60 passed when this list was first written; 74 after the library (31 Oct 2026, see item 14); 90 pass now (`npm test`, 2 Nov 2026; the 16 new ones cover the Observatory, see item 18). Includes decoder fuzzing, placement, startup planning, CPU behaviour (sigma 0.015
    persists and moves; sigma 0.014 evaporates *from the seed*), step scheduling, slider ranges, storage helpers and the tour
    experiment evidence (item 11).
 5. **GPU against CPU reference.** In repo: `tests/browser/orbium-gpu.html`.
@@ -112,6 +112,25 @@ outside the repo produced it.
     parameters, but see the float16 note under "Unresolved". A bug was found by running this page: the first version of
     `Tour.open()` selected the pattern while the tour's own status listener was already active and threw; it was fixed by selecting
     before the tour is marked open.
+18. **Observatory, unit level** (in repo: `tests/unit/observables.test.js`, `sampler.test.js`; 16 tests). Exact mass; strict 0.01
+    boundary on the stored float32 value; a blob straddling the seam located at 63.5, not the centre; an empty field gives a defined
+    no-mass result with no NaN; uniform, nearly uniform and evenly split fields are flagged low-concentration; equal to the earlier
+    per-cell centroid on both seeds at grids 64, 128 and 256 (the duplicated helpers in `patterns.test.js` and `orbium-gpu.js` now
+    use the module); seed masses 19600/255 and 18222/255, active areas 220 and 205; sampling rules and the bounded history.
+19. **Asynchronous readback on the GPU** (in repo: `gpu-parity.html`, AMD renderer above). For float32 (read as
+    RED/FLOAT) and a forced float16 state (read as RGBA/FLOAT), grids 64 and 128: one request in flight, the result arrives by polling,
+    equals the state at submission exactly while the simulation moved 5 steps on, and is tagged with the generation at submission.
+    In-page probes (not in the repo) saw the fence signalled after 1 to 2 animation frames, at most 6. The same page checks that
+    the readback restores the caller's framebuffer and pixel-pack bindings, also when a call inside it throws (26 checks pass).
+20. **Sampled metrics against the CPU** (in repo: `orbium-gpu.html` check E, 29 checks pass). At generations 20 and 100: worst
+    |dMass| 2.91e-4 (O2b, 100), |dCentroid| 7.0e-5 cells, |dActive| 0, against tolerances 0.01 / 0.01 / 2 (decision 26).
+21. **Observatory in the app** (in repo: `ui-flow.html`, 80 checks pass). A sample arrives on its own; after pausing and stepping 3
+    times the sample is tagged with that generation and measures that exact state; no samples while paused; Reset and a pattern
+    switch clear the history and sampling resumes; no readback is requested while the loop is GPU-limited; unavailable during a
+    context loss and resumed after the restore; a simulated readback failure shows "unavailable" while the simulation keeps
+    running; no horizontal overflow at 390 px; at most one pending animation frame and no GL error. The ui-flow animation-frame
+    probe was corrected to subtract callbacks cancelled by `cancelAnimationFrame` (after a restore it reported 2; a per-timestamp
+    count showed `App.frame` ran once per frame, i.e. one loop).
 
 ## Unresolved or unverified
 - **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
@@ -121,8 +140,22 @@ outside the repo produced it.
 - **After a context restore the state format was float16.** In `ui-flow.html` the app started with float32 state and, after a
   `WEBGL_lose_context` loss and restore, `caps.stateFormat` was float16 (the seed then reads back with error up to 2.4e-4). The
   restore path (`initGpu`, `createGLContext`) was not changed by the library work, but it was not run on the earlier commit
-  either, and the cause is unknown. This is the first time the R16F fallback has been exercised, and only by accident; its
+  either. Cause (established in the browser on 3 Nov 2026 by intervention): `initGpu()` calls `dispose()` on the simulation and
+  renderer, whose 9 objects (2 programs, 2 vertex arrays, 3 textures, 2 framebuffers) belong to the lost context; each delete
+  raises INVALID_OPERATION. The format probe then requires `getError() === NO_ERROR` for its first candidate (float32) and falls
+  back to float16. With each error consumed right after its delete, the restored context kept float32. The comment in `initGpu()`
+  calling these deletes harmless no-ops is wrong. `ui-flow.html` cannot see the error itself (the probe drains it); it only logs
+  the format. Possible fixes, both outside the Observatory: skip the disposals when restoring after a loss, or drain errors at the
+  start of the probe; either should come with an assertion that the format is unchanged after a restore. Not fixed (outside the Observatory work).
+  It does not block the Observatory: float16 rounding of an evolved state changed mass by at most 8e-4 and the centroid by about
+  1e-4 cells (state rounding only; float16 dynamics unmeasured). This is the first time the R16F fallback has been exercised, and only by accident; its
   accuracy for long runs is untested.
+- **Observatory cost is measured only by in-page probes, on one machine** (decisions 24 and 26). Warm, per sample at grid 512:
+  `getBufferSubData` 2.2 to 8.5 ms and `computeObservables` 1.1 to 1.7 ms, both synchronous on the main thread; at grid 128 about
+  1.1 ms and 0.2 ms. The first copy at grid 512 took about 45 ms (cold). At grid 512 the loop was GPU-limited throughout, so no
+  samples were taken. The effect on frame rate in an ordinary browser is unmeasured (the built-in pane throttles frames).
+- **Observatory values were approved by the owner on 3 Nov 2026** (decisions 25 and 26). Part of their evidence comes from scripts and
+  in-page probes that are not in the repo, as listed there; history size and the poll limit are sizing choices without measurements.
 - **GPU deviation is larger for O2b** (decision 23). The GPU's pointwise error against the CPU reference at step 200 is about 20
   times that of a float32-accumulating CPU variant (ad hoc: 1.7e-3 against 8.4e-5), and the cause is not isolated.
 - **O2b is not covered by the tour, and its sensitivity to sigma has been probed only briefly** (item 15).
