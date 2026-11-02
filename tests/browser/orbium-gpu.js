@@ -13,6 +13,8 @@ import { stepReference } from '../../src/simulation/reference.js';
 import { decodeRle } from '../../src/simulation/rle.js';
 import { placePatternCentred } from '../../src/simulation/seed.js';
 import { PATTERN_LIBRARY } from '../../src/simulation/patterns.js';
+import { computeObservables, wrapDelta } from '../../src/simulation/observables.js';
+import { AsyncReadback } from '../../src/gl/readback.js';
 
 // Long-horizon rationale: this system is sensitive to initial conditions (a 1e-7 seed perturbation amplifies ~5000x
 // by step 700, and float32-vs-float64 CPU variants diverge ~1e-2 pointwise with no GPU involved), so pointwise parity is
@@ -28,6 +30,9 @@ const THRESHOLDS = {
   // step 200 (1.77e-4 at 100), and the owner approved shortening its pointwise horizon to 20 steps instead of loosening the
   // tolerance (DECISIONS.md 23). Its long-run correctness is judged by the behavioural checks.
   pointwiseHorizon: { O2u: 200, O2b: 20 },
+  // Observatory metrics through the readback vs the CPU reference (check E, generations 20 and 100). Approved by the owner;
+  // set with margin above the pointwise GPU errors measured here at those horizons (at most 1.77e-4 per cell); DECISIONS.md 26.
+  sampledMass: 0.01, sampledCentroidCells: 0.01, sampledActiveCells: 2,
   massRatio: [0.8, 1.1], minShapeCorrelation: 0.85, gridIndependence: 1e-3,
 };
 const LONG_STEPS = Math.max(100, Math.min(5000, Number(new URLSearchParams(location.search).get('long')) || 1000));
@@ -49,16 +54,9 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 const maxAbsDiff = (a, b) => { let m = 0, at = 0; for (let i = 0; i < a.length; i++) { const d = Math.abs(a[i] - b[i]); if (d > m) { m = d; at = i; } } return { max: m, at }; };
 const sum = (a) => { let s = 0; for (const v of a) s += v; return s; };
 
-function circularCentroid(state, n) {
-  let m = 0, cx = 0, sx = 0, cy = 0, sy = 0;
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const v = state[y * n + x]; if (v === 0) continue;
-    m += v; cx += v * Math.cos(2 * Math.PI * x / n); sx += v * Math.sin(2 * Math.PI * x / n);
-    cy += v * Math.cos(2 * Math.PI * y / n); sy += v * Math.sin(2 * Math.PI * y / n);
-  }
-  return { x: ((Math.atan2(sx, cx) / (2 * Math.PI)) * n + n) % n, y: ((Math.atan2(sy, cy) / (2 * Math.PI)) * n + n) % n };
-}
-const wrapDelta = (a, b, n) => ((b - a + n / 2) % n + n) % n - n / 2;
+// Circular centroid from the shared observables module (equal to the per-cell formula this file used before; see
+// tests/unit/observables.test.js). A field with no mass is placed at 0, as the earlier formula's atan2(0, 0) did.
+const circularCentroid = (state, n) => { const c = computeObservables(state, n).centroid; return { x: c.x ?? 0, y: c.y ?? 0 }; };
 
 /** Max over all periodic shifts of the normalised correlation between `state` and the reference footprint `ref`. */
 function shapeCorrelation(state, ref, n) {
@@ -210,6 +208,32 @@ async function verifyPattern(PATTERN, gl, caps, renderer) {
     for (let y = 0; y < 128; y++) for (let x = 0; x < 128; x++) if (x < 32 || x >= 96 || y < 32 || y >= 96) outside += B[y * 128 + x];
     check(`D. grid 128 and grid 64 agree after ${steps} steps`, worst <= THRESHOLDS.gridIndependence && outside === 0, `maxAbsDiff=${worst.toExponential(2)} (tolerance ${THRESHOLDS.gridIndependence}); mass outside the 64-cell window on the 128 grid = ${outside}`);
     a.dispose(); b.dispose();
+  }
+
+  // ---- E: Observatory metrics sampled through the asynchronous readback agree with the same metrics computed on the CPU
+  // reference state at the same generation. Tolerances approved by the owner (DECISIONS.md 26).
+  {
+    const n = 64, p = make(n), steps = [20, 100];
+    const s = new LeniaSimulation(gl, caps, p), rb = new AsyncReadback(gl, n);
+    const kernelE = buildKernel(p.radius);
+    let cpuE = placePatternCentred(n, pattern);
+    s.reset(cpuE);
+    for (let t = 1; t <= steps[steps.length - 1]; t++) {
+      s.step();
+      cpuE = stepReference(cpuE, n, kernelE, p);
+      if (!steps.includes(t)) continue;
+      rb.request(s.stateFramebuffer, { generation: s.generation });
+      let r = null;
+      for (let i = 0; i < 2000 && !(r = rb.poll()); i++) await tick();
+      const g = r && computeObservables(r.state, n), c = computeObservables(cpuE, n);
+      const dM = g ? Math.abs(g.mass - c.mass) : NaN, dA = g ? Math.abs(g.activeArea - c.activeArea) : NaN;
+      const dC = g ? Math.hypot(wrapDelta(g.centroid.x, c.centroid.x, n), wrapDelta(g.centroid.y, c.centroid.y, n)) : NaN;
+      check(`E. sampled metrics at generation ${t} (tag ${r ? r.tag.generation : '-'}) match the CPU reference`,
+        !!r && r.tag.generation === t && g.centroid.valid && c.centroid.valid
+        && dM <= THRESHOLDS.sampledMass && dC <= THRESHOLDS.sampledCentroidCells && dA <= THRESHOLDS.sampledActiveCells,
+        `|dMass|=${dM.toExponential(2)} (<= ${THRESHOLDS.sampledMass}) |dCentroid|=${dC.toExponential(2)} cells (<= ${THRESHOLDS.sampledCentroidCells}) |dActive|=${dA} (<= ${THRESHOLDS.sampledActiveCells}); mass ${g ? g.mass.toFixed(4) : '-'} active ${g ? g.activeArea : '-'}`);
+    }
+    rb.dispose(); s.dispose();
   }
   glCheck('end');
   check('no WebGL errors during the whole run', glErrors.length === 0, glErrors.join('; '));

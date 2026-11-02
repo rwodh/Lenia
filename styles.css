@@ -112,6 +112,7 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--border);
 .param output { font: 13px var(--mono); color: var(--accent); }
 .param input[type="range"] { width: 100%; margin: 6px 0; accent-color: var(--accent); }
 .hint { color: var(--muted); font-size: 12.5px; margin: 0 0 4px !important; }
+.obs-chart { display: block; width: 100%; height: 96px; margin: 10px 0 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
 .start { font-family: var(--mono); }
 .fixed-note { color: var(--muted); font-size: 12.5px; }
 

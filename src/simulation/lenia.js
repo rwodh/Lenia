@@ -36,6 +36,11 @@ export class LeniaSimulation {
     return this.targets[this.read].tex;
   }
 
+  /** Framebuffer holding the current state (read-only use: the Observatory's asynchronous readback). */
+  get stateFramebuffer() {
+    return this.targets[this.read].fbo;
+  }
+
   /** Replace the state with `data` (Float32Array of size*size, row-major, values in [0,1]) and restart counting. */
   reset(data) {
     const { gl, size } = this;

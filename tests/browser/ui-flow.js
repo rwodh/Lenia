@@ -1,6 +1,7 @@
 // Integration check of the real page: explorer controls (play/pause/step/reset/params/speed/palette), single animation
 // loop, and the Guided Discovery tour including its first-visit memory. Uses only the page's own DOM and the ?debug hook.
-import { TOUR_STORAGE_KEY, EXPERIMENT } from '../../src/config.js';
+import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY } from '../../src/config.js';
+import { computeObservables } from '../../src/simulation/observables.js';
 import { getPattern } from '../../src/simulation/patterns.js';
 import { decodeRle } from '../../src/simulation/rle.js';
 import { placePatternCentred } from '../../src/simulation/seed.js';
@@ -27,9 +28,11 @@ async function load(query) {
   await until(() => frame.contentWindow.leniaApp?.sim, 'app start', 20000);
   const w = frame.contentWindow, d = frame.contentDocument;
   // Track animation-frame callbacks that are scheduled but not yet fired: a second loop would show up as > 1.
-  const raf = w.requestAnimationFrame.bind(w);
-  const probe = { pending: 0, max: 0 };
-  w.requestAnimationFrame = (cb) => { probe.pending++; return raf((t) => { probe.pending--; cb(t); }); };
+  // A cancelled callback (App.stop() on context loss) never runs, so it is subtracted when cancelled.
+  const raf = w.requestAnimationFrame.bind(w), caf = w.cancelAnimationFrame.bind(w);
+  const probe = { pending: 0, max: 0 }, ids = new Set();
+  w.requestAnimationFrame = (cb) => { const id = raf((t) => { ids.delete(id); probe.pending--; cb(t); }); ids.add(id); probe.pending++; return id; };
+  w.cancelAnimationFrame = (id) => { if (ids.delete(id)) probe.pending--; caf(id); };
   setInterval(() => { probe.max = Math.max(probe.max, probe.pending); }, 40);
   return { w, d, app: w.leniaApp, probe, $: (s) => d.querySelector(s), click: (s) => d.querySelector(s).click() };
 }
@@ -189,6 +192,101 @@ try {
         && A.params.sigma === 0.014 && hud() === 'Orbium bicaudatus (O2b)', `max diff to the O2b seed ${diffMax(restored, seedOf('O2b')).toExponential(2)} (${fmt})`);
       check('no WebGL error after the restore', A.sim.gl.getError() === A.sim.gl.NO_ERROR);
     }
+  }
+
+  // ---------- Observatory: samples, generation tags, lifecycle, back-off, failure, narrow layout ----------
+  P = await load('');
+  {
+    const A = P.app;
+    const obs = () => A.observation;
+    const txt = (k) => P.$(`[data-obs=${k}]`).textContent;
+    await until(() => obs().status === 'ok', 'first Observatory sample');
+    const first = obs().latest;
+    check('Observatory: a sample arrives on its own; card shows mass, active area, centroid and the generation it describes',
+      first.mass > 60 && first.mass < 80 && first.activeArea > 150 && first.centroid.valid && first.generation <= A.sim.generation
+      && txt('mass') === first.mass.toFixed(2) && txt('sample').startsWith('generation ') && /^\d+(\.\d)?, \d+(\.\d)?$/.test(txt('centroid')),
+      `mass=${txt('mass')} active=${txt('active')} centroid=${txt('centroid')} sample=${txt('sample')}`);
+    check('Observatory: definitions are visible and the chart has a text equivalent',
+      P.$('#card-observatory').textContent.includes('sum of all cell values') && txt('summary').startsWith('Mass by generation')
+      && P.$('[data-obs=chart]').getAttribute('aria-label') === txt('summary'));
+
+    // generation tag: paused, step a known count; the sample must describe exactly that generation and state
+    A.pause();
+    await until(() => !A.readback.busy, 'no readback in flight');
+    const g0 = A.sim.generation;
+    for (let i = 1; i <= 3; i++) { P.click('#btn-step'); await until(() => A.sim.generation === g0 + i, `step ${i}`); }
+    await until(() => obs().latest && obs().latest.generation === g0 + 3, 'sample of the stepped generation');
+    const exact = computeObservables(A.sim.readState(), A.sim.size); // paused: the state is still that generation
+    check('Observatory: after pausing and stepping 3 times, the sample is tagged with that generation and measures that exact state',
+      obs().latest.generation === g0 + 3 && obs().latest.mass === exact.mass && obs().latest.activeArea === exact.activeArea,
+      `tag=${obs().latest.generation} expected=${g0 + 3} mass=${obs().latest.mass} vs ${exact.mass}`);
+    const n0 = A.history.length;
+    await sleep(1500);
+    check('Observatory: while paused no further samples are taken', A.history.length === n0 && obs().latest.generation === g0 + 3, `history ${n0} -> ${A.history.length}`);
+
+    // Reset and pattern switch clear the history; sampling resumes
+    P.click('#btn-play');
+    await until(() => A.history.length >= 3, 'some history');
+    P.click('#btn-reset');
+    check('Observatory: Reset clears the history and the latest value at once', A.history.length === 0 && obs().latest === null && txt('sample') === 'waiting for a sample (none are taken while the GPU is behind)');
+    await until(() => obs().status === 'ok', 'sampling resumes after Reset');
+    check('Observatory: sampling resumes after Reset from the restored seed', obs().latest.generation < 60 && obs().latest.mass > 60, `gen=${obs().latest.generation} mass=${obs().latest.mass.toFixed(2)}`);
+    P.d.querySelectorAll('#seg-pattern button')[1].click();
+    check('Observatory: a pattern switch clears the history', A.history.length === 0 && obs().latest === null);
+    await until(() => obs().status === 'ok', 'sampling resumes after the switch');
+    check('Observatory: after switching to O2b the samples describe O2b', obs().latest.generation < 60 && obs().latest.mass > 60 && obs().latest.mass < 75, `mass=${obs().latest.mass.toFixed(2)}`);
+    P.d.querySelectorAll('#seg-pattern button')[0].click();
+    check('Observatory: history is bounded by its capacity', A.history.capacity === OBSERVATORY.historyLength && A.history.length <= A.history.capacity);
+
+    // back-off: while the loop considers the GPU behind, no readback is requested; sampling resumes afterwards
+    await until(() => obs().status === 'ok' && !A.readback.busy, 'steady sampling');
+    let requests = 0;
+    const realRequest = A.readback.request.bind(A.readback);
+    A.readback.request = (...args) => { requests++; return realRequest(...args); };
+    A.gpuBound = true; A.cleanFrames = -1e9; // hold the loop in its GPU-limited state
+    const gB = A.sim.generation;
+    await sleep(2000);
+    check('Observatory: no readback is requested while the GPU is behind (the simulation keeps running)', requests === 0 && A.sim.generation > gB, `requests=${requests} generation ${gB} -> ${A.sim.generation}`);
+    A.gpuBound = false; A.cleanFrames = 0;
+    await until(() => requests > 0, 'sampling resumes after the GPU catches up');
+    check('Observatory: sampling resumes when the GPU catches up', requests > 0);
+    A.readback.request = realRequest;
+
+    // context loss and restore: unavailable while lost, history cleared, sampling resumes on the new context
+    A.history.length > 0 || await until(() => A.history.length > 0, 'history before loss');
+    const ext = A.sim.gl.getExtension('WEBGL_lose_context');
+    if (ext) {
+      const old = A.sim;
+      ext.loseContext();
+      await until(() => obs().status === 'unavailable', 'unavailable after loss', 10000);
+      check('Observatory: unavailable while the graphics context is lost, history cleared', A.history.length === 0 && txt('sample').startsWith('unavailable'), txt('sample'));
+      ext.restoreContext();
+      await until(() => A.sim !== old && A.running, 'context restore', 30000);
+      await until(() => obs().status === 'ok', 'sampling after restore', 30000);
+      check('Observatory: sampling resumes after the context is restored', obs().latest.mass > 0 && A.readback && !A.readback.failed, `format=${A.caps.stateFormat.name}`);
+    }
+
+    // readback failure: shown as unavailable; the simulation keeps running
+    A.readback.poll = () => { throw new Error('simulated readback failure'); };
+    await until(() => obs().status === 'unavailable', 'unavailable after a readback failure');
+    const gF = A.sim.generation;
+    await sleep(1500);
+    check('Observatory: a readback failure shows "unavailable" and the simulation keeps running',
+      txt('sample').includes('simulated readback failure') && txt('mass') === '-' && A.sim.generation > gF && !A.paused && P.$('#fatal').hidden,
+      `sample="${txt('sample')}" generation ${gF} -> ${A.sim.generation}`);
+
+    // narrow layout: no horizontal overflow; the chart fits its card
+    const frameWidth = frame.style.width;
+    frame.style.width = '390px';
+    await sleep(800);
+    const root = P.d.documentElement, chart = P.$('[data-obs=chart]'), card = P.$('#card-observatory');
+    check('Observatory: no horizontal overflow at 390 px; the chart fits its card',
+      root.scrollWidth <= root.clientWidth && chart.getBoundingClientRect().width <= card.getBoundingClientRect().width && chart.clientWidth > 0,
+      `scrollWidth=${root.scrollWidth} clientWidth=${root.clientWidth} chart=${chart.clientWidth}`);
+    frame.style.width = frameWidth;
+    P.probe.max = 0;
+    await sleep(2000);
+    check('Observatory: still at most one pending animation frame; no WebGL error', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
   }
 
   // ---------- returning visit: no auto tour; reopen works; experiment is interactive ----------
