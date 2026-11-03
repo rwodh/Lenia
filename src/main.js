@@ -30,7 +30,8 @@ try {
   app.start();
   new Controls(app, document);
   new Observatory(app, document);
-  new ViewControls(app, document);
+  // A click on the world (not a drag) chooses the organism's start cell while Place is armed.
+  new ViewControls(app, document, { onClick: (cell) => { if (app.placing) app.placeAt(cell); } });
   // The guided experiment is written for Orbium; a URL that swaps it for noise gets the plain explorer.
   const tour = new Tour(app, { available: orbium, storage: safeLocalStorage(window), document });
   if (new URLSearchParams(location.search).has('tour')) tour.open();

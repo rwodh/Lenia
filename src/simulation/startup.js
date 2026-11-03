@@ -1,7 +1,7 @@
 import { normalizeParams } from './params.js';
 import { ORBIUM_O2U, getPattern } from './patterns.js';
 import { decodeRle } from './rle.js';
-import { placePatternCentred, randomDiscSeed } from './seed.js';
+import { placePatternCentred, placePatternAt, randomDiscSeed } from './seed.js';
 
 const PATTERN_PARAM_KEYS = ['radius', 'timeSteps', 'mu', 'sigma'];
 
@@ -62,9 +62,12 @@ export function planStartup(raw = {}) {
  * parameters (radius above all) are not usable here: the kernel is built once from the app's radius and
  * patterns are never rescaled, so a pattern whose radius differs from the running one cannot be shown.
  *
+ * `placement` is null (centred, as at startup) or a cell { x, y } where the pattern's centre cell lands (placePatternAt,
+ * wrap-aware). Placement moves the seed only: values, orientation and parameters are unchanged.
+ *
  * Returns { pattern, params, initialState, label }; `params` is the pattern's own parameter set.
  */
-export function planPattern(id, baseParams) {
+export function planPattern(id, baseParams, placement = null) {
   const pattern = getPattern(id);
   const { params } = normalizeParams({ ...baseParams, ...pattern.params });
   const bad = patternMismatches(params, pattern);
@@ -72,10 +75,13 @@ export function planPattern(id, baseParams) {
     const need = pattern.params.radius;
     throw new RangeError(`pattern ${pattern.id} needs radius ${need}, but this world uses radius ${baseParams.radius}`);
   }
+  const decoded = decodeRle(pattern.rle);
   return {
     pattern,
     params,
-    initialState: placePatternCentred(params.gridSize, decodeRle(pattern.rle)),
+    initialState: placement === null
+      ? placePatternCentred(params.gridSize, decoded)
+      : placePatternAt(params.gridSize, decoded, placement.x, placement.y),
     label: patternLabel(pattern),
   };
 }

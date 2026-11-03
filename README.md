@@ -33,6 +33,9 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
   dragging, or with the arrow keys when the view has focus; `0` or *Reset view* shows the whole world again. The world wraps, so
   panning past an edge continues seamlessly. A "Cell (x, y)" readout names the cell under the pointer (cell (0, 0) is bottom-left).
   Reset, organism switches and a context restore keep the view; the guided tour resets it. Zoom never changes the simulation.
+- **Placement**: *Place*, then click a cell in the view: the selected organism starts with its centre on that cell (copied
+  unchanged, wrapping across the edges). Reset restores it there, switching organism keeps the cell, *Centre* returns to the
+  launch position, and Escape cancels *Place*. The guided tour always starts and ends with the centred Orbium.
 - Kernel radius and grid size are shown but not adjustable (Orbium only exists at radius 13; see `DECISIONS.md` 10).
 
 ## Run it
@@ -79,7 +82,7 @@ src/config.js               limits and defaults
 src/gl/                     context + capability probe, program compile/link, textures/FBOs, frame fence,
                             readback.js = asynchronous state copy (pixel-pack buffer + fence; never waits on the GPU)
 src/shaders/                GLSL ES 3.00 as JS string modules (no fetch, no bundler)
-src/simulation/             kernel/growth math, params validation, seeds, CPU reference  (pure JS, Node-testable)
+src/simulation/             kernel/growth math, params validation, seeds and placement (seed.js), CPU reference  (pure JS, Node-testable)
                             patterns.js = verified upstream organism data and the two-entry registry (O2u, O2b); rle.js = strict decoder
                             startup.js = decides the starting state + parameters (Orbium O2u, or noise if the URL is incompatible); planPattern() plans a selection
                             lenia.js = GPU simulation (ping-pong R32F textures, one fragment pass per step)

@@ -56,7 +56,13 @@ export class Controls {
       description: root.querySelector('[data-pattern="description"]'),
       facts: root.querySelector('[data-pattern="facts"]'),
       locked: root.querySelector('[data-pattern="locked"]'),
+      start: root.querySelector('[data-pattern="start"]'),
     };
+    this.placeBtn = root.getElementById('btn-place');
+    this.centreBtn = root.getElementById('btn-centre');
+    this.canvas = app.canvas;
+    this.placeBtn.addEventListener('click', () => app.armPlacement(!app.placing));
+    this.centreBtn.addEventListener('click', () => app.clearPlacement());
     this.startLabels = {};
 
     for (const key of Object.keys(UI_RANGES)) {
@@ -85,7 +91,9 @@ export class Controls {
     const tag = t && t.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     if (document.getElementById('tour')?.dataset.modal === 'true') return;
-    if (e.code === 'Space') {
+    if (e.key === 'Escape' && this.app.placing) {
+      this.app.armPlacement(false);
+    } else if (e.code === 'Space') {
       if (tag === 'BUTTON') return; // the focused button handles Space itself
       e.preventDefault();
       this.app.togglePlay();
@@ -120,7 +128,13 @@ export class Controls {
     const locked = noLibrary || tourOpen;
     this.paintPattern(snap.patternId);
     for (const b of this.patternBox.querySelectorAll('button')) b.disabled = locked;
+    // Placement follows the same lock as the selector (no organism for the noise start; the tour runs on the centred seed).
+    this.placeBtn.disabled = locked;
+    this.centreBtn.disabled = locked || snap.placement === null;
+    this.placeBtn.setAttribute('aria-pressed', String(snap.placing && !locked));
+    this.canvas?.classList.toggle('placing', snap.placing && !locked);
     const t = this.patternText;
+    t.start.textContent = noLibrary ? '' : snap.placement ? `Start: cell (${snap.placement.x}, ${snap.placement.y})` : 'Start: centre';
     if (noLibrary) {
       t.description.textContent = 'Random noise start.';
       t.facts.textContent = '';

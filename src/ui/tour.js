@@ -62,7 +62,7 @@ export class Tour {
     this.root.hidden = false; // visible first, so the selector (which follows the tour's visibility) renders locked
     // The experiment is written for this organism, whatever was selected before. isOpen is still false here on purpose:
     // selecting emits a status event, and update() has no step to draw until goTo() below sets one.
-    this.app.selectPattern(EXPERIMENT.patternId);
+    this.app.selectPattern(EXPERIMENT.patternId, { centred: true }); // the experiment was measured on the centred seed
     this.app.resetView(); // the tour points at the whole world; view input is blocked while a step is modal
     this.isOpen = true;
     this.goTo(0);
@@ -76,7 +76,7 @@ export class Tour {
     this.setSpot(null);
     this.setModal(false);
     markTourCompleted(this.storage, TOUR_STORAGE_KEY);
-    this.app.selectPattern(EXPERIMENT.patternId); // restarts it exactly like reset(), and leaves the tour's organism selected
+    this.app.selectPattern(EXPERIMENT.patternId, { centred: true }); // restarts it like reset(), centred, the tour's organism selected
     this.app.play();
     this.doc.getElementById('btn-play').focus({ preventScroll: true });
   }

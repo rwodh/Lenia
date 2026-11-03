@@ -5,7 +5,7 @@ import { bufferToWorld } from '../../src/render/view-math.js';
 import { computeObservables } from '../../src/simulation/observables.js';
 import { getPattern } from '../../src/simulation/patterns.js';
 import { decodeRle } from '../../src/simulation/rle.js';
-import { placePatternCentred } from '../../src/simulation/seed.js';
+import { placePatternCentred, placePatternAt } from '../../src/simulation/seed.js';
 
 /** The exact initial state a library pattern must put on the GPU (page grid is 64). */
 const seedOf = (id, n = 64) => placePatternCentred(n, decodeRle(getPattern(id).rle));
@@ -442,6 +442,92 @@ try {
     frame.style.width = frameWidth;
   }
 
+  // ---------- Placement: where the selected organism starts (Reset restores it there) ----------
+  P = await load('');
+  {
+    const A = P.app, c = A.canvas, n = A.sim.size;
+    const placedOf = (id, x, y) => placePatternAt(n, decodeRle(getPattern(id).rle), x, y);
+    const onGpu = (expected) => diffMax(A.sim.readState(), expected) === 0;
+    const rect = () => c.getBoundingClientRect();
+    const fire = (type, x, y) => c.dispatchEvent(new P.w.PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    const cellUnder = (x, y) => A.cellAt((x - rect().left) * (c.width / rect().width), (rect().bottom - y) * (c.height / rect().height));
+    const startText = () => P.$('[data-pattern=start]').textContent;
+    A.pause();
+    check('Placement: starts centred; Centre is disabled; Place is not armed', A.placement === null && startText() === 'Start: centre'
+      && P.$('#btn-centre').disabled && P.$('#btn-place').getAttribute('aria-pressed') === 'false');
+
+    // arm, click a cell (no movement): the organism starts there
+    await until(() => A.observation.status === 'ok', 'a first sample', 60000);
+    P.click('#btn-place');
+    check('Placement: Place arms the mode (pressed, crosshair cursor)', A.placing && P.$('#btn-place').getAttribute('aria-pressed') === 'true' && c.classList.contains('placing'));
+    const r = rect(), px = Math.round(r.left + r.width * 0.31), py = Math.round(r.top + r.height * 0.72);
+    const target = cellUnder(px, py);
+    fire('pointerdown', px, py); fire('pointerup', px, py);
+    check('Placement: a click puts the exact organism, unchanged, with its centre on the clicked cell (generation 0)',
+      !!A.placement && A.placement.x === target.x && A.placement.y === target.y && onGpu(placedOf('O2u', target.x, target.y)) && A.sim.generation === 0,
+      `cell (${target.x}, ${target.y})`);
+    check('Placement: the mode disarms after placing; the card names the start cell; the Observatory history was cleared',
+      !A.placing && !c.classList.contains('placing') && startText() === `Start: cell (${target.x}, ${target.y})` && !P.$('#btn-centre').disabled && A.history.length === 0);
+
+    // a drag while armed pans and does not place; Escape disarms
+    P.click('#btn-place');
+    fire('pointerdown', px, py); fire('pointermove', px + 40, py - 20); fire('pointerup', px + 40, py - 20);
+    check('Placement: a drag while armed pans the view and does not place', A.placing && A.placement.x === target.x && A.placement.y === target.y);
+    P.d.body.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    check('Placement: Escape disarms the mode', !A.placing && P.$('#btn-place').getAttribute('aria-pressed') === 'false');
+    P.click('[data-view-action=reset]');
+
+    // Reset restores the organism at the chosen cell; parameters too
+    P.click('#btn-step');
+    await until(() => A.sim.generation === 1, 'one step');
+    A.setParam('sigma', 0.02);
+    P.click('#btn-reset');
+    check('Placement: Reset restores the organism at the chosen cell (and its parameters)', onGpu(placedOf('O2u', target.x, target.y)) && A.params.sigma === 0.015);
+
+    // a pattern switch keeps the cell
+    P.d.querySelectorAll('#seg-pattern button')[1].click();
+    check('Placement: switching organism keeps the start cell (O2b placed at the same cell, O2b parameters)',
+      A.patternId === 'O2b' && onGpu(placedOf('O2b', target.x, target.y)) && A.params.sigma === 0.014 && startText() === `Start: cell (${target.x}, ${target.y})`);
+    P.d.querySelectorAll('#seg-pattern button')[0].click();
+
+    // across the corner of the periodic world; bad cells are refused
+    A.placeAt({ x: 0, y: n - 1 });
+    const cornerMass = A.sim.readState().reduce((s, v) => s + v, 0), seedMass = seedOf('O2u').reduce((s, v) => s + v, 0);
+    check('Placement: a start cell on the world corner wraps the organism across both edges, mass unchanged',
+      onGpu(placedOf('O2u', 0, n - 1)) && Math.abs(cornerMass - seedMass) < 1e-9);
+    let refused = 0;
+    for (const bad of [{ x: n, y: 0 }, { x: -1, y: 3 }, { x: 1.5, y: 2 }, { x: NaN, y: 0 }, null]) {
+      try { A.placeAt(bad); } catch (e) { if (e.name === 'RangeError') refused++; }
+    }
+    check('Placement: cells outside the grid, fractional cells and NaN are refused; nothing changes',
+      refused === 5 && A.placement.x === 0 && A.placement.y === n - 1 && onGpu(placedOf('O2u', 0, n - 1)));
+
+    // a context restore re-seeds the placed organism
+    const ext = A.sim.gl.getExtension('WEBGL_lose_context');
+    if (ext && A.caps.stateFormat.name === 'float32') {
+      const old = A.sim;
+      ext.loseContext(); await sleep(300); ext.restoreContext();
+      await until(() => A.sim !== old && A.running, 'context restore', 30000);
+      check('Placement: a context restore re-seeds the organism at the chosen cell exactly', onGpu(placedOf('O2u', 0, n - 1)) && A.sim.generation === 0);
+    }
+
+    // Centre returns to the launch state
+    P.click('#btn-centre');
+    check('Placement: Centre returns to the centred seed exactly', A.placement === null && onGpu(seedOf('O2u')) && P.$('#btn-centre').disabled && startText() === 'Start: centre');
+
+    // the tour starts and ends centred and locks placement
+    A.placeAt({ x: 10, y: 10 });
+    P.click('#btn-place');
+    P.click('#tour-open');
+    check('Placement: opening the tour selects the centred O2u, disarms Place and locks Place and Centre',
+      A.placement === null && !A.placing && onGpu(seedOf('O2u')) && P.$('#btn-place').disabled && P.$('#btn-centre').disabled);
+    P.d.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: 'Escape' }));
+    check('Placement: after the tour the organism is centred and placement is available again', A.placement === null && !P.$('#btn-place').disabled);
+    P.probe.max = 0;
+    await sleep(2000);
+    check('Placement: one animation loop and no GL error', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
+  }
+
   // ---------- returning visit: no auto tour; reopen works; experiment is interactive ----------
   P = await load('');
   check('returning visit: tour does not auto-open', P.$('#tour').hidden);
@@ -498,6 +584,7 @@ try {
   try { P.app.selectPattern('O2u'); } catch (e) { noiseThrew = e.name === 'RangeError'; }
   check('noise start: no organism library (selector locked with a reason, selection refused, no pattern id)',
     P.app.patternId === null && noiseThrew && [...P.d.querySelectorAll('#seg-pattern button')].every((b) => b.disabled) && !P.$('[data-pattern=locked]').hidden);
+  check('noise start: Place and Centre are disabled (no organism to place)', P.$('#btn-place').disabled && P.$('#btn-centre').disabled);
 } catch (e) {
   failures++;
   log(`FAIL  unexpected exception: ${e && e.stack ? e.stack : e}`, 'fail');

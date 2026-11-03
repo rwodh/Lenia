@@ -163,6 +163,12 @@
           <div class="seg seg-wide" role="group" aria-labelledby="h-organism" id="seg-pattern"></div>
           <p class="hint" data-pattern="description"></p>
           <p class="hint start" data-pattern="facts"></p>
+          <div class="row place-row">
+            <button type="button" class="btn" id="btn-place" aria-pressed="false" aria-describedby="place-hint">Place</button>
+            <button type="button" class="btn btn-ghost" id="btn-centre">Centre</button>
+            <span class="hint start" data-pattern="start">Start: centre</span>
+          </div>
+          <p class="hint" id="place-hint">Place, then click a cell in the view: the organism starts there. Reset restores it at that cell, and switching organism keeps the cell.</p>
           <p class="hint" data-pattern="locked" hidden></p>
         </section>
 
