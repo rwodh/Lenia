@@ -37,6 +37,7 @@ Requires Node 18+ only to serve files and run tests (ES modules do not load from
 
 ```bash
 npm start        # http://localhost:8080/   (PORT=9000 npm start to change)
+npm start -- --headers=prod --base=Lenia   # production headers from _headers, site under /Lenia/ (docs/DEPLOYMENT.md)
 npm test         # unit tests (node:test, no dependencies)
 ```
 
@@ -86,8 +87,11 @@ src/ui/                     hud.js (status), controls.js (panel wiring), tour.js
                             logic), storage.js (first-visit flag), observatory.js (Observatory card and chart), fatal.js. All text via textContent, never innerHTML
 tests/unit/                 Node tests for the pure modules (incl. decoder, pattern provenance, placement)
 tests/fixtures/             reference decodes of O2u and O2b produced by the upstream decoder source
-tests/browser/              in-browser GPU checks (parity, organisms, readback) and the UI flow
-tools/serve.js              zero-dependency localhost dev server
+tests/browser/              in-browser GPU checks (parity, organisms, readback) and the UI flow; test-pages.css (no inline styles)
+tools/serve.js              zero-dependency localhost dev server (optionally the production headers and a subpath)
+tools/headers.js            reads _headers (pure; used by serve.js and tests/unit/headers.test.js)
+_headers                    production response headers (CSP, nosniff, referrer, permissions, cache policy)
+docs/DEPLOYMENT.md          what is published, host settings, post-deploy checklist, real-browser results template
 ```
 
 Startup flow: `main.js` -> `planStartup(URL params)` -> `App({ params, initialState })`; `App` uploads `initialState`
@@ -101,13 +105,16 @@ State never leaves the GPU during stepping.
 
 - No network requests, storage, analytics or secrets. CSP (meta tag in `index.html`):
   `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'`.
-  Response-header CSP and other security headers are Phase 6.
+  For production, `_headers` sends the same CSP as a response header plus `frame-ancestors 'self'`, with `nosniff`,
+  `Referrer-Policy`, `Permissions-Policy` and `Cache-Control: no-cache`; `tests/unit/headers.test.js` keeps the two CSPs
+  equal. Not deployed yet: see `docs/DEPLOYMENT.md`.
 - All parameters are validated; kernel radius is lowered automatically to keep `grid^2 * (2R+1)^2` under a cap.
 - Drawing buffer is capped at 4096x2160 pixels. WebGL2 absence, float-target absence, shader compile/link failure,
   GPU allocation failure and context loss all produce a user-facing message or recovery, never a silent failure.
 - The only persisted data is the tour flag above. Fonts are system stacks (Bengali: Noto Sans Bengali, Nirmala UI, ...), so no font
   files or network requests are needed. The CSP is unchanged.
-- Dev server binds to 127.0.0.1, blocks path traversal and dotfiles. Production hosting is Phase 6.
+- Dev server binds to 127.0.0.1, blocks path traversal and dotfiles; `--headers=prod` sends the production headers. Hosting:
+  `docs/DEPLOYMENT.md`.
 
 ## Third-party data
 

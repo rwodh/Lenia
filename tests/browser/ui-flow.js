@@ -138,10 +138,12 @@ try {
       const fmt = A.caps.stateFormat.name, err = diffMax(A.sim.readState(), seedOf('O2u'));
       check('context restore keeps the state format (float32 before and after)', fmt === first, `before=${first} after=${fmt}`);
       check('context restore re-seeds the selected organism exactly (error 0, generation 0)', err === 0 && A.sim.generation === 0, `maxAbsError=${err}`);
+      await until(() => A.observation.status === 'ok', 'Observatory sample after restore', 60000); // still paused: the seed itself
+      const seedMass = computeObservables(seedOf('O2u'), A.sim.size).mass;
+      check('context restore: the Observatory resumes (generation 0, the seed\'s exact mass); no WebGL error',
+        A.observation.latest.generation === 0 && A.observation.latest.mass === seedMass && A.sim.gl.getError() === A.sim.gl.NO_ERROR,
+        `gen=${A.observation.latest.generation} mass=${A.observation.latest.mass.toFixed(4)}`);
       A.play();
-      await until(() => A.observation.status === 'ok', 'Observatory sample after restore', 30000);
-      check('context restore: the Observatory resumes; no WebGL error', A.observation.latest.mass > 60 && A.sim.gl.getError() === A.sim.gl.NO_ERROR,
-        `mass=${A.observation.latest.mass.toFixed(2)}`);
     }
   }
 
@@ -251,18 +253,26 @@ try {
     await sleep(1500);
     check('Observatory: while paused no further samples are taken', A.history.length === n0 && obs().latest.generation === g0 + 3, `history ${n0} -> ${A.history.length}`);
 
-    // Reset and pattern switch clear the history; sampling resumes
+    // Reset and pattern switch clear the history; sampling resumes. Paused across each, so the first new sample must be the
+    // restored seed itself (generation 0, the seed's exact mass) however long the GPU takes to catch up: no samples are taken
+    // while it is behind, so a playing check would depend on the GPU's speed.
+    const seedMass = (id) => computeObservables(seedOf(id), A.sim.size).mass;
+    const massTol = A.caps.stateFormat.name === 'float32' ? 0 : 1e-2;
     P.click('#btn-play');
     await until(() => A.history.length >= 3, 'some history');
+    A.pause();
     P.click('#btn-reset');
     check('Observatory: Reset clears the history and the latest value at once', A.history.length === 0 && obs().latest === null && txt('sample') === 'waiting for a sample (none are taken while the GPU is behind)');
     await until(() => obs().status === 'ok', 'sampling resumes after Reset');
-    check('Observatory: sampling resumes after Reset from the restored seed', obs().latest.generation < 60 && obs().latest.mass > 60, `gen=${obs().latest.generation} mass=${obs().latest.mass.toFixed(2)}`);
+    check('Observatory: sampling resumes after Reset from the restored seed (generation 0, the seed\'s mass)',
+      obs().latest.generation === 0 && Math.abs(obs().latest.mass - seedMass('O2u')) <= massTol, `gen=${obs().latest.generation} mass=${obs().latest.mass.toFixed(4)}`);
     P.d.querySelectorAll('#seg-pattern button')[1].click();
     check('Observatory: a pattern switch clears the history', A.history.length === 0 && obs().latest === null);
     await until(() => obs().status === 'ok', 'sampling resumes after the switch');
-    check('Observatory: after switching to O2b the samples describe O2b', obs().latest.generation < 60 && obs().latest.mass > 60 && obs().latest.mass < 75, `mass=${obs().latest.mass.toFixed(2)}`);
+    check('Observatory: after switching to O2b the samples describe O2b (generation 0, the O2b seed\'s mass)',
+      obs().latest.generation === 0 && Math.abs(obs().latest.mass - seedMass('O2b')) <= massTol, `gen=${obs().latest.generation} mass=${obs().latest.mass.toFixed(4)}`);
     P.d.querySelectorAll('#seg-pattern button')[0].click();
+    P.click('#btn-play');
     check('Observatory: history is bounded by its capacity', A.history.capacity === OBSERVATORY.historyLength && A.history.length <= A.history.capacity);
 
     // back-off: while the loop considers the GPU behind, no readback is requested; sampling resumes afterwards
@@ -270,10 +280,13 @@ try {
     let requests = 0;
     const realRequest = A.readback.request.bind(A.readback);
     A.readback.request = (...args) => { requests++; return realRequest(...args); };
-    A.gpuBound = true; A.cleanFrames = -1e9; // hold the loop in its GPU-limited state
+    // Hold the loop in its GPU-limited state. Setting the flag alone is not enough: a frame the fence really holds back resets
+    // cleanFrames, and the loop recovers 60 frames later.
+    Object.defineProperty(A, 'gpuBound', { get: () => true, set: () => {}, configurable: true });
     const gB = A.sim.generation;
     await sleep(2000);
     check('Observatory: no readback is requested while the GPU is behind (the simulation keeps running)', requests === 0 && A.sim.generation > gB, `requests=${requests} generation ${gB} -> ${A.sim.generation}`);
+    delete A.gpuBound;
     A.gpuBound = false; A.cleanFrames = 0;
     await until(() => requests > 0, 'sampling resumes after the GPU catches up');
     check('Observatory: sampling resumes when the GPU catches up', requests > 0);
