@@ -8,9 +8,9 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 |---|---|
 | 1 Foundation | Done |
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
-| 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector. Not done: more patterns, zoom and pan, seed placement |
+| 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28). Not done: more patterns, seed placement |
 | 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart). No trails, no heatmap, no speed estimate |
-| 5 Quality | Partial: 96 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 5 Quality | Partial: 107 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
@@ -23,7 +23,7 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | Interactive parameter controls | mu, sigma, T live; radius and grid fixed by design (decision 19); grid, radius, seed also via URL |
 | Real-time GPU processing | Implemented (WebGL2 fragment shader, ping-pong textures) |
 | Pause, step, reset, restart | Implemented (Reset = initial state and parameters; restart = Reset while playing) |
-| Zoom and pan | Not implemented |
+| Zoom and pan | Implemented (display only): wheel, drag, pinch, buttons, keys; cell readout under the pointer (decision 28) |
 | Information display | Implemented: Running/Paused, generation, pattern, world and radius, render rate, float format, "GPU-limited", and Observatory measurements |
 | Dynamic colour visualization | Partial: two fixed colour maps of cell state; no activity mapping |
 | Live parameter experimentation | Implemented for mu, sigma, T, plus the guided sigma experiment |
@@ -141,6 +141,16 @@ outside the repo produced it.
     (format float32 -> float16, error 2.37e-4) and pass after the fix (float32 before and after, error 0 at generation 0, the
     Observatory resumes, no GL error). An earlier standalone headless test had also seen an INVALID_OPERATION after a restore
     (cause then unknown); the same deletes are a likely source, but that test was not re-run.
+23. **World View** (decision 28; in repo: `view-math.test.js` 9 tests, `gpu-parity.html` World View checks, `ui-flow.html`
+    World View block; AMD renderer above). The default view draws byte-identical pixels to a frozen copy of the pre-view
+    display shader (0 of 806,872 bytes differ over 4 canvas sizes and both palettes). The JS mapping predicts where the shader
+    draws a lit cell in a window centred on the world corner (zoom 8), a panned view (zoom 3) and at maximum zoom (16); at zoom
+    8 on the corner no pixel shows the background (seamless wrap). In the app: the wheel zooms about the cursor (the world point
+    under it stays within 1e-6 cells), drag and two-pointer pinch, buttons, + / - / 0, arrow keys only with the view focused,
+    the cell readout, zoom limits 1 to 16, rejected NaN / Infinity, a bounded extreme wheel delta, the state unchanged by any
+    view input (paused: identical read-back), the view kept by Reset, a pattern switch and a context restore, reset by the
+    tour, blocked during its modal steps, one animation loop, no GL error, no overflow at 390 px. Touch input was exercised
+    with synthetic pointer events only; no real touch device was used.
 
 ## Unresolved or unverified
 - **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
@@ -164,7 +174,7 @@ outside the repo produced it.
   treats only R = 13 as compatible.
 - **Reproducibility gap.** Items 6 to 9 and the fixture build came from scripts outside the repo. The repo contains only the
   unit tests and two standalone browser pages.
-- **Orbium is 20 cells wide.** The default grid was changed from 256 to 128 to make it larger on screen (decision 15); zoom would be the proper fix.
+- **Orbium is 20 cells wide.** The default grid was changed from 256 to 128 to make it larger on screen (decision 15); the World View can now magnify it (decision 28), but the default grid was left at 128.
 - **Placement orientation:** Orbium appears vertically mirrored relative to upstream pictures (decision 13).
 - **Version labels.** `package.json` still says 0.1.0 although the code now includes Phase 2, and the separate backup is also
   called v0.1.0. A version bump or tag is the project owner's decision.
@@ -184,7 +194,7 @@ outside the repo produced it.
 ## Planned (not started)
 1. Performance pass on real hardware (frame rate, 2x speed, R16F fallback accuracy, the `maxTapsPerStep` cap); proofread the Bangla.
 2. More verified patterns beyond O2u and O2b, and seed placement.
-3. Zoom and pan.
+3. World View follow-ups: a follow camera (needs smoothing of the sparse, asynchronous Observatory samples), value inspection under the pointer (needs the readback path), an optional nearest-neighbour magnification.
 4. Motion trails and activity heatmap.
 5. Deployment: the owner deploys and fills in the real-browser results table in `docs/DEPLOYMENT.md`.
 6. Optional: resample patterns to allow `?radius=` with Orbium. The paper reports approximate scale invariance for R > 12, but

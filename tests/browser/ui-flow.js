@@ -1,6 +1,7 @@
 // Integration check of the real page: explorer controls (play/pause/step/reset/params/speed/palette), single animation
 // loop, and the Guided Discovery tour including its first-visit memory. Uses only the page's own DOM and the ?debug hook.
-import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY } from '../../src/config.js';
+import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY, VIEW } from '../../src/config.js';
+import { bufferToWorld } from '../../src/render/view-math.js';
 import { computeObservables } from '../../src/simulation/observables.js';
 import { getPattern } from '../../src/simulation/patterns.js';
 import { decodeRle } from '../../src/simulation/rle.js';
@@ -327,6 +328,118 @@ try {
     P.probe.max = 0;
     await sleep(2000);
     check('Observatory: still at most one pending animation frame; no WebGL error', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
+  }
+
+  // ---------- World View: zoom and pan (display only), inputs, readout, lifecycle, single loop ----------
+  P = await load('');
+  {
+    const A = P.app, c = A.canvas, n = A.sim.size;
+    const rect = () => c.getBoundingClientRect();
+    const toBuf = (x, y) => ({ px: (x - rect().left) * (c.width / rect().width), py: (rect().bottom - y) * (c.height / rect().height) });
+    const worldUnder = (x, y) => { const b = toBuf(x, y); return bufferToWorld(A.view, n, c.width, c.height, b.px, b.py); };
+    const sameWorld = (a, b) => { const d = (u, v) => { const t = Math.abs(u - v) % n; return Math.min(t, n - t); }; return !!a && !!b && d(a.x, b.x) < 1e-6 && d(a.y, b.y) < 1e-6; };
+    const fire = (type, x, y, extra = {}) => c.dispatchEvent(new P.w.PointerEvent(type, { clientX: x, clientY: y, pointerId: extra.id ?? 1, pointerType: extra.type ?? 'mouse', button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    const key = (k, target = P.d.body) => target.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    const viewOf = () => ({ ...A.view });
+    A.pause();
+    check('World View: starts at the default view (whole world, centred)', A.view.zoom === 1 && A.view.cx === n / 2 && A.view.cy === n / 2);
+
+    // wheel zoom about the cursor: the world point under the cursor stays under it
+    // Whole CSS pixels: Chrome rounds the clientX/clientY of synthetic mouse, pointer and wheel events.
+    const r = rect(), wx = Math.round(r.left + r.width * 0.61), wy = Math.round(r.top + r.height * 0.37);
+    const before = worldUnder(wx, wy);
+    for (let i = 0; i < 3; i++) c.dispatchEvent(new P.w.WheelEvent('wheel', { deltaY: -150, clientX: wx, clientY: wy, bubbles: true, cancelable: true }));
+    check('World View: the wheel zooms in about the cursor (the world point under it stays put)', A.view.zoom > 1.5 && sameWorld(before, worldUnder(wx, wy)), `zoom=${A.view.zoom.toFixed(3)}`);
+
+    // drag pans: the point under the pointer follows it
+    const grab = worldUnder(wx, wy);
+    fire('pointerdown', wx, wy); fire('pointermove', wx + 2, wy + 1); fire('pointermove', wx + 40, wy - 25); fire('pointerup', wx + 40, wy - 25);
+    check('World View: dragging pans the view; the grabbed point follows the pointer', sameWorld(grab, worldUnder(wx + 40, wy - 25)), `centre=(${A.view.cx.toFixed(2)}, ${A.view.cy.toFixed(2)})`);
+
+    // two-pointer pinch zooms
+    const z0 = A.view.zoom, mx = Math.round(r.left + r.width / 2), my = Math.round(r.top + r.height / 2);
+    fire('pointerdown', mx - 30, my, { id: 11, type: 'touch' }); fire('pointerdown', mx + 30, my, { id: 12, type: 'touch' });
+    fire('pointermove', mx + 60, my, { id: 12, type: 'touch' });
+    fire('pointerup', mx - 30, my, { id: 11, type: 'touch' }); fire('pointerup', mx + 60, my, { id: 12, type: 'touch' });
+    check('World View: a two-finger pinch zooms', A.view.zoom > z0 * 1.4, `zoom ${z0.toFixed(2)} -> ${A.view.zoom.toFixed(2)}`);
+
+    // buttons and keys
+    let v = viewOf(); P.click('[data-view-action=zoom-in]');
+    const zin = A.view.zoom; P.click('[data-view-action=zoom-out]');
+    check('World View: Zoom in / Zoom out buttons', zin > v.zoom && Math.abs(A.view.zoom - v.zoom) < 1e-9 && P.$('[data-view-action=zoom-in]').getAttribute('aria-label') === 'Zoom in');
+    key('+'); const kin = A.view.zoom; key('-');
+    check('World View: + and - keys zoom', kin > v.zoom && Math.abs(A.view.zoom - v.zoom) < 1e-9);
+    v = viewOf(); key('ArrowRight');
+    check('World View: arrow keys do nothing unless the view has focus', A.view.cx === v.cx && A.view.cy === v.cy);
+    c.focus(); key('ArrowRight', c); key('ArrowUp', c);
+    check('World View: with the view focused, ArrowRight / ArrowUp move the view right / up (focusable canvas)', P.d.activeElement === c && A.view.cx > v.cx && A.view.cy > v.cy && c.tabIndex === 0);
+    key('s', c); await until(() => A.sim.generation === 1, 'S still steps with the view focused');
+    c.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true, cancelable: true })); // Space toggles play
+    check('World View: Space and S keep working with the view focused', !A.paused && A.sim.generation >= 1);
+    A.pause();
+
+    // readout
+    fire('pointermove', wx, wy);
+    const cb = toBuf(wx, wy), cl = A.cellAt(cb.px, cb.py);
+    check('World View: "Cell (x, y)" readout under the pointer', P.$('[data-view=cell]').textContent === `Cell (${cl.x}, ${cl.y})`, P.$('[data-view=cell]').textContent);
+
+    // limits and bad input
+    for (let i = 0; i < 30; i++) key('+');
+    const zMax = A.view.zoom;
+    for (let i = 0; i < 30; i++) key('-');
+    check('World View: zoom is limited to [1, VIEW.maxZoom]', zMax === VIEW.maxZoom && A.view.zoom === 1, `max=${zMax} min=${A.view.zoom}`);
+    key('+'); v = viewOf();
+    A.zoomAt(NaN, 10, 2); A.zoomAt(10, 10, Infinity); A.zoomAt(10, 10, -1); A.panBy(Infinity, 0); A.panBy(0, NaN);
+    check('World View: NaN / Infinity / non-positive factors are rejected', A.view.cx === v.cx && A.view.cy === v.cy && A.view.zoom === v.zoom);
+    key('+'); key('+'); const zw = A.view.zoom;
+    c.dispatchEvent(new P.w.WheelEvent('wheel', { deltaY: Number.MAX_VALUE, clientX: wx, clientY: wy, bubbles: true, cancelable: true }));
+    check('World View: an extreme wheel delta changes the zoom by at most VIEW.wheelMaxFactor', Math.abs(A.view.zoom - zw / VIEW.wheelMaxFactor) < 1e-9 && Number.isFinite(A.view.cx), `zoom ${zw} -> ${A.view.zoom}`);
+
+    // display only; lifecycle: Reset and pattern switch keep the view, a context restore keeps it, the tour resets it
+    A.pause();
+    await sleep(300);
+    const gHeld = A.sim.generation, held = A.sim.readState();
+    key('+'); key('+'); fire('pointerdown', wx, wy); fire('pointermove', wx + 30, wy); fire('pointerup', wx + 30, wy);
+    c.dispatchEvent(new P.w.WheelEvent('wheel', { deltaY: 120, clientX: wx, clientY: wy, bubbles: true, cancelable: true }));
+    await sleep(500); // several frames drawn with the new view
+    v = viewOf();
+    check('World View: zooming and panning never change the simulation state (paused: same generation, identical state)',
+      A.sim.generation === gHeld && diffMax(A.sim.readState(), held) === 0);
+    P.click('#btn-reset');
+    check('World View: Reset keeps the view', A.view.cx === v.cx && A.view.zoom === v.zoom);
+    P.d.querySelectorAll('#seg-pattern button')[1].click();
+    check('World View: a pattern switch keeps the view', A.view.cx === v.cx && A.view.zoom === v.zoom);
+    P.d.querySelectorAll('#seg-pattern button')[0].click();
+    const ext = A.sim.gl.getExtension('WEBGL_lose_context');
+    if (ext) {
+      const old = A.sim;
+      ext.loseContext(); await sleep(300); ext.restoreContext();
+      await until(() => A.sim !== old && A.running, 'context restore', 30000);
+      check('World View: a context restore keeps the view', A.view.cx === v.cx && A.view.cy === v.cy && A.view.zoom === v.zoom);
+    }
+    P.click('[data-view-action=reset]');
+    check('World View: Reset view (button) returns to the whole world', A.view.zoom === 1 && A.view.cx === n / 2 && A.view.cy === n / 2);
+    key('+'); key('+');
+    P.click('#tour-open');
+    check('World View: opening the tour resets the view', A.view.zoom === 1 && A.view.cx === n / 2);
+    key('+');
+    check('World View: view keys are ignored while the tour is modal', A.view.zoom === 1 && P.$('#tour').dataset.modal === 'true');
+    P.d.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: 'Escape' }));
+    check('World View: the view works again after the tour', (key('+'), A.view.zoom > 1));
+
+    // single loop, no GL error after mixed input; narrow layout
+    for (let i = 0; i < 20; i++) { key('+'); fire('pointerdown', wx, wy); fire('pointermove', wx + 5 * i, wy); fire('pointerup', wx + 5 * i, wy); key('-'); P.click('#btn-play'); }
+    P.probe.max = 0;
+    await sleep(2000);
+    check('World View: one animation loop and no GL error after mixed input', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
+    const frameWidth = frame.style.width;
+    frame.style.width = '390px';
+    await sleep(800);
+    const root = P.d.documentElement, tools = P.$('.view-tools').getBoundingClientRect(), stage = P.$('.stage').getBoundingClientRect();
+    check('World View: narrow layout (390 px) has no horizontal overflow and the view tools fit the stage',
+      root.scrollWidth <= root.clientWidth && tools.left >= stage.left && tools.right <= stage.right && getComputedStyle(c).touchAction === 'none',
+      `scrollWidth=${root.scrollWidth} clientWidth=${root.clientWidth} tools=${tools.left.toFixed(0)}..${tools.right.toFixed(0)} stage=${stage.left.toFixed(0)}..${stage.right.toFixed(0)}`);
+    frame.style.width = frameWidth;
   }
 
   // ---------- returning visit: no auto tour; reopen works; experiment is interactive ----------

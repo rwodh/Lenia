@@ -125,7 +125,15 @@
 
     <main class="workspace">
       <section class="stage" aria-label="Simulation view">
-        <canvas id="lenia-canvas" role="img" aria-label="Real-time Lenia simulation, drawn by the GPU"></canvas>
+        <canvas id="lenia-canvas" tabindex="0" role="application" aria-roledescription="world view"
+                aria-label="Real-time Lenia simulation, drawn by the GPU. Drag or use the arrow keys to pan; wheel, pinch, plus or minus to zoom; 0 resets the view."
+                aria-describedby="view-keys"></canvas>
+        <div class="view-tools" role="group" aria-label="World view">
+          <output class="view-cell" data-view="cell">Cell: -</output>
+          <button type="button" class="btn view-btn" data-view-action="zoom-out" aria-label="Zoom out" aria-keyshortcuts="-">&minus;</button>
+          <button type="button" class="btn view-btn" data-view-action="zoom-in" aria-label="Zoom in" aria-keyshortcuts="+">+</button>
+          <button type="button" class="btn view-btn" data-view-action="reset" aria-keyshortcuts="0">Reset view</button>
+        </div>
         <p class="stage-caption">Periodic world: whatever leaves one edge re-enters the opposite edge.</p>
         <p class="stage-note" data-hud="note" hidden></p>
       </section>
@@ -147,6 +155,7 @@
             <div class="seg" role="group" aria-labelledby="l-colour" id="seg-colour"></div>
           </div>
           <p class="keys"><kbd>Space</kbd> play / pause &middot; <kbd>S</kbd> step (paused) &middot; <kbd>R</kbd> reset</p>
+          <p class="keys" id="view-keys">View: drag or pinch, wheel to zoom &middot; <kbd>+</kbd> <kbd>&minus;</kbd> zoom &middot; <kbd>0</kbd> whole world &middot; arrow keys pan (view focused). The view never changes the simulation.</p>
         </section>
 
         <section class="card" id="card-organism" aria-labelledby="h-organism">

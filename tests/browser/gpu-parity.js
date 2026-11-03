@@ -10,6 +10,9 @@ import { stepReference } from '../../src/simulation/reference.js';
 import { randomDiscSeed } from '../../src/simulation/seed.js';
 import { LeniaError } from '../../src/errors.js';
 import { AsyncReadback } from '../../src/gl/readback.js';
+import { defaultView, viewUniforms, worldToBuffer, cellAt } from '../../src/render/view-math.js';
+import fullscreenVert from '../../src/shaders/fullscreen.vert.js';
+import preViewFrag from '../fixtures/display-pre-view.frag.js';
 
 const out = document.getElementById('result');
 const lines = [];
@@ -84,6 +87,95 @@ try {
   check('state 1 maps to viridis(1) yellow', near(one, [252, 231, 33], 6), `rgb=${one.slice(0, 3)}`);
   check('no pending GL error after rendering', gl.getError() === gl.NO_ERROR);
   sim.dispose(); renderer.dispose();
+
+  // 3b. World View (display only). The default view must draw exactly the bytes of the shader as it was before the view
+  //     existed (frozen copy in tests/fixtures), and the JS mapping (src/render/view-math.js) must predict where the shader
+  //     draws a given cell, including in a window that straddles the world's edges.
+  {
+    const n = 64;
+    const vsim = new LeniaSimulation(gl, caps, normalizeParams({ gridSize: n, radius: 5 }).params);
+    const vren = new Renderer(gl, canvas, caps);
+    const old = createProgram(gl, 'display-pre-view', fullscreenVert, preViewFrag, ['uState', 'uGridSize', 'uCanvasSize', 'uPalette']);
+    const vao = gl.createVertexArray();
+    const snap = () => {
+      const b = new Uint8Array(canvas.width * canvas.height * 4);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.readPixels(0, 0, canvas.width, canvas.height, gl.RGBA, gl.UNSIGNED_BYTE, b);
+      return b;
+    };
+    const drawOld = (palette) => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, canvas.width, canvas.height);
+      old.use();
+      gl.bindVertexArray(vao);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, vsim.stateTexture);
+      gl.uniform1i(old.uniforms.uState, 0);
+      gl.uniform1i(old.uniforms.uGridSize, n);
+      gl.uniform2f(old.uniforms.uCanvasSize, canvas.width, canvas.height);
+      gl.uniform1i(old.uniforms.uPalette, palette);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    };
+    vsim.reset(randomDiscSeed(n, { radiusFraction: 0.45, seed: 7 }));
+    let differing = 0, worst = 0, compared = 0;
+    for (const [w, h] of [[128, 64], [97, 131], [200, 200], [333, 120]]) {
+      canvas.width = w; canvas.height = h;
+      for (const palette of [0, 1]) {
+        vren.setPalette(palette ? 'observatory' : 'viridis');
+        vren.draw(vsim.stateTexture, n, viewUniforms(defaultView(n), n));
+        const now = snap();
+        drawOld(palette);
+        const before = snap();
+        for (let i = 0; i < now.length; i++) { const d = Math.abs(now[i] - before[i]); if (d) differing++; worst = Math.max(worst, d); }
+        compared += now.length;
+      }
+    }
+    check('World View: the default view draws byte-identical pixels to the pre-view shader (4 canvas sizes, both palettes)',
+      worst === 0, `differing bytes=${differing} of ${compared}, max difference=${worst}`);
+
+    // A field with two lit cells; one is the corner cell (63, 0), whose neighbours across both edges are (0, 0) and (63, 63).
+    canvas.width = 160; canvas.height = 96;
+    const W = canvas.width, H = canvas.height;
+    const field = new Float32Array(n * n);
+    field[0 * n + 63] = 1;
+    field[12 * n + 41] = 1;
+    vsim.reset(field);
+    vren.setPalette('viridis');
+    const pixelAt = (x, y) => {
+      const b = new Uint8Array(4);
+      gl.readPixels(Math.floor(x), Math.floor(y), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, b);
+      return Array.from(b);
+    };
+    const bright = (c) => c[0] > 150 && c[1] > 180; // viridis near 1 (yellow)
+    const dark = (c) => near(c, [71, 1, 85], 3); // viridis(0)
+    const cases = [
+      { label: 'window straddling both world edges (centre at the world corner, zoom 8)', view: { cx: 0, cy: 0, zoom: 8 }, cell: [63, 0], far: [[2, 0], [63, 61], [60, 0]] },
+      { label: 'panned and zoomed (zoom 3)', view: { cx: 41.3, cy: 12.8, zoom: 3 }, cell: [41, 12], far: [[44, 12], [41, 9], [38, 15]] },
+      { label: 'maximum zoom (16)', view: { cx: 63.9, cy: 0.2, zoom: 16 }, cell: [63, 0], far: [[61, 0]] },
+    ];
+    for (const { label, view, cell, far } of cases) {
+      vren.draw(vsim.stateTexture, n, viewUniforms(view, n));
+      const p = worldToBuffer(view, n, W, H, cell[0] + 0.5, cell[1] + 0.5);
+      const at = pixelAt(p.px, p.py);
+      const jsCell = cellAt(view, n, W, H, Math.floor(p.px) + 0.5, Math.floor(p.py) + 0.5);
+      const farOk = far.every(([x, y]) => {
+        const q = worldToBuffer(view, n, W, H, x + 0.5, y + 0.5);
+        return q.px < 0 || q.py < 0 || q.px >= W || q.py >= H || dark(pixelAt(q.px, q.py));
+      });
+      check(`World View: JS mapping predicts the drawn cell, ${label}`,
+        bright(at) && jsCell && jsCell.x === cell[0] && jsCell.y === cell[1] && farOk,
+        `cell (${cell}) -> pixel (${p.px.toFixed(1)}, ${p.py.toFixed(1)}) rgb=${at.slice(0, 3)}; JS cell there (${jsCell && [jsCell.x, jsCell.y]})`);
+    }
+    // Seamless wrap: at zoom 8 centred on the world corner no pixel shows the background colour.
+    vren.draw(vsim.stateTexture, n, viewUniforms({ cx: 0, cy: 0, zoom: 8 }, n));
+    const all = snap();
+    let bgPixels = 0;
+    for (let i = 0; i < all.length; i += 4) if (near([all[i], all[i + 1], all[i + 2]], [11, 13, 18], 2)) bgPixels++;
+    check('World View: a window straddling the world edges wraps seamlessly (no background pixel at zoom 8)', bgPixels === 0, `background pixels=${bgPixels}`);
+    check('World View: no pending GL error', gl.getError() === gl.NO_ERROR);
+    gl.deleteVertexArray(vao); gl.deleteProgram(old.program); vren.dispose(); vsim.dispose();
+    canvas.width = 128; canvas.height = 64;
+  }
 
   // 4. Asynchronous readback (Observatory): exact copy, tag = generation at submission, one request in flight,
   //    float32 and float16 state formats. Polling uses setTimeout here; nothing waits on the GPU.

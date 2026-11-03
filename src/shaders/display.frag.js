@@ -1,6 +1,9 @@
 // Draws the simulation state to the screen: aspect-correct square fit, smooth
 // (manual bilinear) magnification, and a selectable colour map (0 = viridis, 1 = observatory).
 // Colour is display only; the simulation state is never modified. Cell (0,0) is bottom-left.
+// World View (src/ui/view-math.js has the same mapping in JS): uZoom magnifies about the canvas centre and uOffset (cells)
+// shifts the world; one period of the periodic world is drawn around the view centre, wrapping seamlessly across its edges.
+// The default view (zoom 1, offset 0) evaluates exactly the original expressions, so it draws the same bytes as before.
 export default /* glsl */ `#version 300 es
 precision highp float;
 precision highp int;
@@ -10,6 +13,8 @@ uniform sampler2D uState;
 uniform int uGridSize;
 uniform vec2 uCanvasSize;
 uniform int uPalette;
+uniform float uZoom;
+uniform vec2 uOffset;
 
 out vec4 outColor;
 
@@ -53,13 +58,13 @@ float sampleState(vec2 pos) {
 }
 
 void main() {
-  float side = min(uCanvasSize.x, uCanvasSize.y);
+  float side = min(uCanvasSize.x, uCanvasSize.y) * uZoom;
   vec2 uv = (gl_FragCoord.xy - 0.5 * uCanvasSize) / side + 0.5;
   if (any(lessThan(uv, vec2(0.0))) || any(greaterThanEqual(uv, vec2(1.0)))) {
     outColor = vec4(BACKGROUND, 1.0);
     return;
   }
-  float v = clamp(sampleState(uv * float(uGridSize)), 0.0, 1.0);
+  float v = clamp(sampleState(uv * float(uGridSize) + uOffset), 0.0, 1.0);
   outColor = vec4(clamp(uPalette == 1 ? observatory(v) : viridis(v), 0.0, 1.0), 1.0);
 }
 `;

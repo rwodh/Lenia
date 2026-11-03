@@ -54,7 +54,15 @@ html, body {
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
 
 .stage { position: relative; min-height: 0; background: var(--bg); }
-#lenia-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#lenia-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#lenia-canvas.dragging { cursor: grabbing; }
+#lenia-canvas:focus-visible { outline-offset: -2px; }
+.view-tools { position: absolute; top: 12px; right: 14px; display: flex; align-items: center; gap: 6px; }
+.view-btn { padding: 3px 10px; background: rgba(11, 13, 18, 0.7); }
+.view-cell {
+  padding: 4px 8px; border-radius: 8px; background: rgba(11, 13, 18, 0.7);
+  font: 12px var(--mono); color: var(--muted); min-width: 13ch; text-align: right;
+}
 .stage-caption, .stage-note {
   position: absolute; left: 14px; margin: 0; padding: 4px 10px; border-radius: 8px;
   background: rgba(11, 13, 18, 0.7); font-size: 12px; max-width: calc(100% - 28px);
@@ -155,7 +163,10 @@ kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--border);
   .app { height: auto; display: block; }
   .brand p { display: none; }
   .workspace { display: block; }
+  /* The canvas takes touch gestures for pan and zoom (touch-action: none); the page still scrolls from the panel below,
+     which starts at most 62% of the way down the screen. */
   .stage { height: min(100vw, 62vh); }
+  .stage-note { top: 52px; }
   .panel { overflow: visible; border-left: 0; border-top: 1px solid var(--border); }
   .tour[data-modal="false"] .tour-card { left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 38vh; padding: 14px 16px; }
   /* While a docked step is showing, shrink the canvas so the canvas, the controls and the sheet fit together. */
