@@ -7,9 +7,9 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | Phase | State |
 |---|---|
 | 1 Foundation | Done |
-| 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium seed is shown at startup (one organism only) |
+| 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
 | 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector. Not done: more patterns, zoom and pan, seed placement |
-| 4 Visualization | Partial: two colour maps (Observatory, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart). No trails, no heatmap, no speed estimate |
+| 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart). No trails, no heatmap, no speed estimate |
 | 5 Quality | Partial: 90 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Not started: localhost dev server only; CSP is a meta tag. The app is still static files (no build step) |
 | 7 Extensions | Not started |
@@ -131,25 +131,24 @@ outside the repo produced it.
     running; no horizontal overflow at 390 px; at most one pending animation frame and no GL error. The ui-flow animation-frame
     probe was corrected to subtract callbacks cancelled by `cancelAnimationFrame` (after a restore it reported 2; a per-timestamp
     count showed `App.frame` ran once per frame, i.e. one loop).
+22. **A context restore keeps the state format** (in repo: `ui-flow.html` regression block, AMD renderer above, 3 Nov 2026).
+    Before the fix the app started in float32 and came back in float16 after a `WEBGL_lose_context` loss and restore (the
+    re-seeded state then read back with error 2.37e-4). Cause, established earlier by intervention: `initGpu()` deleted the 9
+    objects of the lost context (2 programs, 2 vertex arrays, 3 textures, 2 framebuffers); each delete raised
+    INVALID_OPERATION, and the format probe, which requires `getError() === NO_ERROR` for each candidate, rejected float32
+    because of that leftover error. Fix: after a loss `initGpu()` drops the old objects without deleting them (they died with
+    the context); the probe is unchanged, so first-start probing is unchanged. The new checks failed on the unfixed code
+    (format float32 -> float16, error 2.37e-4) and pass after the fix (float32 before and after, error 0 at generation 0, the
+    Observatory resumes, no GL error). An earlier standalone headless test had also seen an INVALID_OPERATION after a restore
+    (cause then unknown); the same deletes are a likely source, but that test was not re-run.
 
 ## Unresolved or unverified
 - **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
   or performance figure was taken (the built-in browser pane delivered animation frames at roughly 5 Hz while the pages ran, so
   such numbers would not mean anything), and the `maxTapsPerStep` cap (200M, an estimate) and 2x speed remain untested. A 512 grid
   took about 2.5 s per step on the earlier software renderer.
-- **After a context restore the state format was float16.** In `ui-flow.html` the app started with float32 state and, after a
-  `WEBGL_lose_context` loss and restore, `caps.stateFormat` was float16 (the seed then reads back with error up to 2.4e-4). The
-  restore path (`initGpu`, `createGLContext`) was not changed by the library work, but it was not run on the earlier commit
-  either. Cause (established in the browser on 3 Nov 2026 by intervention): `initGpu()` calls `dispose()` on the simulation and
-  renderer, whose 9 objects (2 programs, 2 vertex arrays, 3 textures, 2 framebuffers) belong to the lost context; each delete
-  raises INVALID_OPERATION. The format probe then requires `getError() === NO_ERROR` for its first candidate (float32) and falls
-  back to float16. With each error consumed right after its delete, the restored context kept float32. The comment in `initGpu()`
-  calling these deletes harmless no-ops is wrong. `ui-flow.html` cannot see the error itself (the probe drains it); it only logs
-  the format. Possible fixes, both outside the Observatory: skip the disposals when restoring after a loss, or drain errors at the
-  start of the probe; either should come with an assertion that the format is unchanged after a restore. Not fixed (outside the Observatory work).
-  It does not block the Observatory: float16 rounding of an evolved state changed mass by at most 8e-4 and the centroid by about
-  1e-4 cells (state rounding only; float16 dynamics unmeasured). This is the first time the R16F fallback has been exercised, and only by accident; its
-  accuracy for long runs is untested.
+- **The R16F (float16) fallback is exercised only by forced tests.** `gpu-parity.html` reads back a forced float16 state, and
+  before the fix in fact 22 a context restore switched to float16 by accident. Its accuracy over long runs is untested.
 - **Observatory cost is measured only by in-page probes, on one machine** (decisions 24 and 26). Warm, per sample at grid 512:
   `getBufferSubData` 2.2 to 8.5 ms and `computeObservables` 1.1 to 1.7 ms, both synchronous on the main thread; at grid 128 about
   1.1 ms and 0.2 ms. The first copy at grid 512 took about 45 ms (cold). At grid 512 the loop was GPU-limited throughout, so no
@@ -165,8 +164,6 @@ outside the repo produced it.
   treats only R = 13 as compatible.
 - **Reproducibility gap.** Items 6 to 9 and the fixture build came from scripts outside the repo. The repo contains only the
   unit tests and two standalone browser pages.
-- **Context restore.** In a standalone headless test the restore did not complete, and an `INVALID_OPERATION` appeared after it
-  with and without `deleteSync` (cause unknown). The end-to-end app scenario passed.
 - **Orbium is 20 cells wide.** The default grid was changed from 256 to 128 to make it larger on screen (decision 15); zoom would be the proper fix.
 - **Placement orientation:** Orbium appears vertically mirrored relative to upstream pictures (decision 13).
 - **Version labels.** `package.json` still says 0.1.0 although the code now includes Phase 2, and the separate backup is also
@@ -177,13 +174,14 @@ outside the repo produced it.
   Windows, macOS and Android.
 - **Accessibility:** labels, focus-visible styles, `inert` behind modal tour steps, `aria-pressed` and `aria-live` status text
   exist, but no screen-reader or keyboard-only walkthrough was done, and the canvas has only a text label.
-- **Tour on touch devices and real browsers other than headless Chromium** was not tested. The mobile layout is checked by
-  screenshot only.
+- **Tour on touch devices and in browsers other than Chromium-based ones** was not tested. `ui-flow.html` has run the whole tour
+  in headless Chromium (software renderer) and in the Claude desktop app's built-in browser (AMD renderer, facts 17 and 21);
+  Firefox, Safari and touch input are untested. The mobile layout is checked by screenshot only.
 - **Speed 2x** needs two steps per frame at 60 Hz; on a 30 Hz display or a slow GPU the loop's cap and back-pressure apply and the
   real speed is lower. Not measured on hardware.
 
 ## Planned (not started)
-1. Performance pass on real hardware (frame rate, 2x speed, R16F fallback and the float16-after-restore behaviour, the `maxTapsPerStep` cap); proofread the Bangla.
+1. Performance pass on real hardware (frame rate, 2x speed, R16F fallback accuracy, the `maxTapsPerStep` cap); proofread the Bangla.
 2. More verified patterns beyond O2u and O2b, and seed placement.
 3. Zoom and pan.
 4. Motion trails and activity heatmap.

@@ -24,10 +24,10 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
   each value describes, and a mass-by-generation chart of the last 240 samples. The state is copied from the GPU asynchronously, at
   most every 250 ms (500 ms at grid 512) and not at all while the GPU is behind, so on a slow GPU or a large grid the card can
   stay at "waiting"; nothing waits for the GPU inside the animation frame (the final copy of finished data is synchronous CPU work). Reset, a pattern switch and a context loss clear the
-  history. (The "Observatory" colour map below is unrelated: it is only a palette name.)
+  history.
 - **Lenia Explorer**: Play/Pause, Step (exactly one step, paused only), Reset (initial organism *and* initial parameters; play state
   and speed are kept), Speed (0.25x to 2x of the 60 steps/s base rate), live sliders for mu, sigma and T, two colour maps
-  (Observatory, Viridis; display only), status (Running/Paused, generation, pattern, world, render rate), and a
+  (Ocean, Viridis; display only), status (Running/Paused, generation, pattern, world, render rate), and a
   "What are you observing?" explanation in English and Bangla. Keys: `Space` play/pause, `S` step, `R` reset.
 - Kernel radius and grid size are shown but not adjustable (Orbium only exists at radius 13; see `DECISIONS.md` 10).
 

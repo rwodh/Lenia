@@ -17,8 +17,10 @@ Read the actual code (`src/simulation/kernel.js`, `reference.js`, `src/shaders/l
 1. `npm test` passes; report the count and any failure verbatim.
 2. If the shader, kernel, or params changed: run `tests/browser/gpu-parity.html` and `tests/browser/orbium-gpu.html`
    (see `README.md`). Each must end in `ALL PASS`. Quote the tolerances and errors it reports.
-3. Parity policy (`DECISIONS.md` 12): strict pointwise (1e-3) for the first 200 steps; beyond that compare observables
-   (mass, centroid) only. Do not tighten or loosen tolerances to make a run pass without recording why.
+3. Parity policy (`DECISIONS.md` 12 and 23): strict pointwise over a per-pattern horizon, at 1e-3 for float32 state and
+   1e-2 for the float16 fallback: 1, 5 and 20 steps for every pattern, extended to 100 and 200 steps for O2u only. Beyond
+   that, judge long-term behaviour by observables (mass, centroid, shape, motion) only; long-term pointwise equivalence is
+   not claimed. Do not tighten or loosen tolerances, or change a horizon, to make a run pass without recording why.
 4. Seed data: Validate every library pattern against its documented upstream
    source, parameters, and integrity evidence. Never retype or rescale patterns.
    Do not claim a pattern is verified unless its own evidence supports that claim.
