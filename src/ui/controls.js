@@ -1,8 +1,14 @@
-import { SPEEDS, UI_RANGES, PALETTES } from '../config.js';
+import { SPEEDS, UI_RANGES, PALETTES, VISUAL } from '../config.js';
 import { PATTERN_LIBRARY, getPattern } from '../simulation/patterns.js';
 
 // The id 'observatory' is internal (shader uniform, tests); its label is 'Ocean' so it is not confused with the Observatory card.
 const PALETTE_LABELS = { observatory: 'Ocean', viridis: 'Viridis' };
+const AID_LABELS = { off: 'Off', trails: 'Trails', activity: 'Activity' };
+// What each visualization aid shows. Both are derived from the state and drawn instead of it; neither changes the simulation.
+const AID_TEXT = {
+  trails: 'Trails: each cell shows the highest value it has had recently; older values fade by this factor at every simulation step. Derived from the state, display only.',
+  activity: 'Activity: how much each cell has been changing, summed over recent steps with this fade and scaled so that 1 is the largest possible sustained change (1/T per step). Derived from the state, display only.',
+};
 
 function segmented(container, options, onPick) {
   const buttons = new Map();
@@ -44,6 +50,24 @@ export class Controls {
       PALETTES.map((id) => ({ id, label: PALETTE_LABELS[id] })),
       (id) => app.setPalette(id),
     );
+
+    this.paintAid = segmented(
+      root.getElementById('seg-aid'),
+      VISUAL.modes.map((id) => ({ id, label: AID_LABELS[id] })),
+      (id) => app.setVisualMode(id),
+    );
+    this.aid = {
+      panel: root.querySelector('[data-aid="panel"]'),
+      explain: root.querySelector('[data-aid="explain"]'),
+      decay: root.getElementById('p-decay'),
+      out: root.querySelector('[data-out="decay"]'),
+    };
+    this.aid.decay.min = String(VISUAL.decay.min);
+    this.aid.decay.max = String(VISUAL.decay.max);
+    this.aid.decay.step = String(VISUAL.decay.step);
+    this.aid.decay.addEventListener('input', () => {
+      this.aid.decay.value = String(app.setDecay(Number(this.aid.decay.value)));
+    });
 
     this.tourEl = root.getElementById('tour');
     this.patternBox = root.getElementById('seg-pattern');
@@ -110,6 +134,7 @@ export class Controls {
     this.stepBtn.title = snap.paused ? 'Advance exactly one step' : 'Pause first, then step';
     this.paintSpeed(snap.speedId);
     this.paintColour(snap.palette);
+    this.renderAid(snap);
     for (const key of Object.keys(UI_RANGES)) {
       const v = snap.params[key];
       this.inputs[key].value = String(v);
@@ -119,6 +144,17 @@ export class Controls {
       if (start) start.textContent = `(start: ${snap.baseParams[key].toFixed(UI_RANGES[key].digits)})`;
     }
     this.renderPattern(snap);
+  }
+
+  /** Visualization aid: mode buttons; the fade slider and the explanation only while an aid is on. */
+  renderAid(snap) {
+    this.paintAid(snap.visualMode);
+    const on = snap.visualMode !== 'off';
+    this.aid.panel.hidden = !on;
+    this.aid.decay.value = String(snap.decay);
+    const halfLife = Math.log(0.5) / Math.log(snap.decay);
+    this.aid.out.textContent = `${snap.decay.toFixed(3)} (half-life ${halfLife < 10 ? halfLife.toFixed(1) : Math.round(halfLife)} steps)`;
+    this.aid.explain.textContent = on ? AID_TEXT[snap.visualMode] : '';
   }
 
   /** Organism card: which pattern is shown, its facts, and why the choice is locked when it is. */

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LIMITS, DEFAULT_PARAMS, UI_RANGES, SPEEDS, DEFAULT_SPEED_ID, EXPERIMENT, LOOP } from '../../src/config.js';
+import { LIMITS, DEFAULT_PARAMS, UI_RANGES, SPEEDS, DEFAULT_SPEED_ID, EXPERIMENT, LOOP, VISUAL } from '../../src/config.js';
 import { ORBIUM_O2U, getPattern } from '../../src/simulation/patterns.js';
 import { normalizeParams } from '../../src/simulation/params.js';
 import { observeProgress, atTarget, watchProgress } from '../../src/ui/experiment.js';
@@ -67,4 +67,15 @@ test('the tour pins a library pattern whose sigma is the experiment start, so th
   assert.equal(p.id, 'O2u');
   assert.equal(p.params[EXPERIMENT.param], 0.015);
   assert.notEqual(p.params[EXPERIMENT.param], EXPERIMENT.targetValue);
+});
+
+test('visual aids: off is the default; the fade range is the approved 0.80 to 0.999, inside (0, 1), with the default on a step', () => {
+  assert.equal(VISUAL.modes[0], 'off');
+  assert.deepEqual([...VISUAL.modes], ['off', 'trails', 'activity']);
+  const d = VISUAL.decay;
+  assert.ok(d.min === 0.8 && d.max === 0.999 && d.min <= d.default && d.default <= d.max && d.max < 1 && d.min > 0);
+  const steps = (d.default - d.min) / d.step;
+  assert.ok(Math.abs(steps - Math.round(steps)) < 1e-9);
+  const halfLife = (x) => Math.log(0.5) / Math.log(x);
+  assert.ok(halfLife(d.max) > 600 && halfLife(d.min) < 4, 'from a few steps to about ten seconds at 60 steps/s');
 });

@@ -528,6 +528,90 @@ try {
     check('Placement: one animation loop and no GL error', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
   }
 
+  // ---------- Visualization aids (trails, activity): display only, per step, off by default ----------
+  P = await load('');
+  {
+    const A = P.app;
+    const aidBtn = (i) => P.d.querySelectorAll('#seg-aid .seg-btn')[i];
+    const decayIn = P.$('#p-decay');
+    check('aid: off by default; nothing allocated; the fade panel is hidden',
+      A.visualMode === 'off' && A.overlay === null && P.$('[data-aid=panel]').hidden && aidBtn(0).getAttribute('aria-pressed') === 'true');
+
+    // the state is unchanged by an aid: the same steps with trails on and off give identical states
+    A.pause();
+    P.click('#btn-reset');
+    aidBtn(1).click();
+    for (let i = 1; i <= 5; i++) { P.click('#btn-step'); await until(() => A.sim.generation === i, `aid step ${i}`); }
+    const withTrails = A.sim.readState(), trailSteps = A.overlay.steps;
+    aidBtn(0).click();
+    P.click('#btn-reset');
+    for (let i = 1; i <= 5; i++) { P.click('#btn-step'); await until(() => A.sim.generation === i, `plain step ${i}`); }
+    check('aid: the state after 5 steps with trails on is identical to the state without them; one accumulation per step',
+      diffMax(withTrails, A.sim.readState()) === 0 && trailSteps === 5, `accumulation passes=${trailSteps}`);
+    check('aid: switching off frees the aid', A.overlay === null);
+
+    // trails on: panel, explanation, fade control; accumulation keeps pace with the generation while playing
+    aidBtn(1).click();
+    check('aid: Trails shows the fade control and says what it shows (derived, display only)',
+      !P.$('[data-aid=panel]').hidden && P.$('[data-aid=explain]').textContent.startsWith('Trails:') && P.$('[data-aid=explain]').textContent.includes('display only'));
+    P.click('#btn-play');
+    const g0 = A.sim.generation, s0 = A.overlay.steps;
+    await until(() => A.sim.generation >= g0 + 20, 'running with trails');
+    A.pause();
+    check('aid: one accumulation pass per simulation step while playing', A.overlay.steps - s0 === A.sim.generation - g0, `steps ${A.overlay.steps - s0} vs generations ${A.sim.generation - g0}`);
+    const trailVals = A.overlay.readValues();
+    check('aid: trails hold values in [0, 1] and cover more cells than the organism alone',
+      trailVals.every((v) => v >= 0 && v <= 1) && trailVals.filter((v) => v > 0.01).length > A.sim.readState().filter((v) => v > 0.01).length);
+
+    // fade control is bounded; bad values are rejected
+    decayIn.value = '0.5'; decayIn.dispatchEvent(new P.w.Event('input', { bubbles: true }));
+    const lo = A.decay;
+    decayIn.value = '2'; decayIn.dispatchEvent(new P.w.Event('input', { bubbles: true }));
+    const hi = A.decay;
+    let threw = false; try { A.setDecay(NaN); } catch (e) { threw = e.name === 'RangeError'; }
+    check('aid: the fade is limited to [0.80, 0.999]; NaN is rejected', lo === 0.8 && hi === 0.999 && threw && A.decay === 0.999 && P.$('[data-out=decay]').textContent.startsWith('0.999'));
+
+    // activity; Reset and a pattern switch clear the aid
+    aidBtn(2).click();
+    check('aid: Activity says what it shows (scaled to the largest possible change, display only)',
+      A.visualMode === 'activity' && P.$('[data-aid=explain]').textContent.startsWith('Activity:') && P.$('[data-aid=explain]').textContent.includes('1/T'));
+    P.click('#btn-step'); await until(() => A.overlay.steps >= 1, 'an activity pass');
+    P.click('#btn-reset');
+    check('aid: Reset clears the aid', A.overlay.readValues().every((v) => v === 0) && A.overlay.steps === 0);
+    P.click('#btn-step'); await until(() => A.overlay.steps >= 1, 'an activity pass');
+    P.d.querySelectorAll('#seg-pattern button')[1].click();
+    check('aid: a pattern switch clears the aid', A.overlay.readValues().every((v) => v === 0));
+    P.d.querySelectorAll('#seg-pattern button')[0].click();
+
+    // GPU-limited back-off still applies (one step per frame), with one accumulation per step
+    P.click('#btn-play');
+    Object.defineProperty(A, 'gpuBound', { get: () => true, set: () => {}, configurable: true });
+    let frames = 0; const realDraw = A.renderer.draw.bind(A.renderer);
+    A.renderer.draw = (...args) => { frames++; return realDraw(...args); };
+    const gB = A.sim.generation, sB = A.overlay.steps;
+    await sleep(1500);
+    const dg = A.sim.generation - gB, ds = A.overlay.steps - sB;
+    A.renderer.draw = realDraw;
+    delete A.gpuBound; A.gpuBound = false; A.cleanFrames = 0;
+    check('aid: while GPU-limited the loop still takes at most one step per drawn frame, and accumulates once per step',
+      dg > 0 && dg <= frames && ds === dg, `generations ${dg}, frames ${frames}, accumulation passes ${ds}`);
+
+    // context restore recreates the aid (cleared); the tour turns it off
+    const ext = A.sim.gl.getExtension('WEBGL_lose_context');
+    if (ext) {
+      const old = A.sim;
+      ext.loseContext(); await sleep(300); ext.restoreContext();
+      await until(() => A.sim !== old && A.running, 'context restore', 30000);
+      check('aid: a context restore recreates the aid on the new context (mode kept)', A.visualMode === 'activity' && !!A.overlay && A.overlay.gl === A.sim.gl);
+    }
+    P.click('#tour-open');
+    check('aid: opening the tour turns the aid off (the tour describes the state itself)', A.visualMode === 'off' && A.overlay === null);
+    P.d.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: 'Escape' }));
+    P.probe.max = 0;
+    await sleep(2000);
+    check('aid: one animation loop and no GL error', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
+  }
+
   // ---------- returning visit: no auto tour; reopen works; experiment is interactive ----------
   P = await load('');
   check('returning visit: tour does not auto-open', P.$('#tour').hidden);

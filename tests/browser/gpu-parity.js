@@ -11,6 +11,7 @@ import { randomDiscSeed } from '../../src/simulation/seed.js';
 import { LeniaError } from '../../src/errors.js';
 import { AsyncReadback } from '../../src/gl/readback.js';
 import { defaultView, viewUniforms, worldToBuffer, cellAt } from '../../src/render/view-math.js';
+import { OverlayAccumulator, OVERLAY_MODE } from '../../src/gl/overlay.js';
 import fullscreenVert from '../../src/shaders/fullscreen.vert.js';
 import preViewFrag from '../fixtures/display-pre-view.frag.js';
 
@@ -240,6 +241,73 @@ try {
     check('readback restores bindings when a call inside request() throws; readState() still works and no GL error remains',
       threw && gl.readPixels === realReadPixels && same(before, afterThrow) && !rb.busy && readOk && gl.getError() === gl.NO_ERROR);
     rb.dispose(); a.dispose(); b.dispose(); gl.deleteBuffer(sentinel);
+  }
+
+  // 5. Visualization aids (trails, activity): display only. The state with an aid accumulating every step must be identical
+  //    to the state without it, and the accumulated values must match the same rule computed on the CPU from the GPU states.
+  {
+    const { params: ap } = normalizeParams({ gridSize: 64, radius: 13, seed: 21 });
+    const seed = randomDiscSeed(64, { radiusFraction: 0.3, seed: 21 });
+    const withAid = new LeniaSimulation(gl, caps, ap), without = new LeniaSimulation(gl, caps, ap);
+    withAid.reset(seed); without.reset(seed);
+    const ov = new OverlayAccumulator(gl, caps, 64);
+    const f32 = Math.fround, tol = caps.stateFormat.name === 'float32' ? 1e-6 : 1e-2;
+    let cpu = new Float32Array(64 * 64), prev = withAid.readState(), worstAid = 0;
+    for (const [mode, decay, label] of [[OVERLAY_MODE.trails, 0.9, 'trails'], [OVERLAY_MODE.activity, 0.95, 'activity']]) {
+      ov.clear(); cpu = new Float32Array(64 * 64);
+      for (let t = 0; t < 15; t++) {
+        withAid.step();
+        ov.accumulate(withAid.stateTexture, withAid.previousTexture, mode, decay);
+        without.step();
+        const a = withAid.readState();
+        for (let i = 0; i < cpu.length; i++) {
+          cpu[i] = mode === OVERLAY_MODE.trails ? Math.max(f32(cpu[i] * f32(decay)), a[i]) : f32(f32(cpu[i] * f32(decay)) + Math.abs(a[i] - prev[i]));
+        }
+        prev = a;
+      }
+      const gpu = ov.readValues(), d = maxAbsDiff(gpu, cpu);
+      worstAid = Math.max(worstAid, d);
+      check(`aid (${label}): accumulated values equal the per-step rule computed on the CPU from the GPU states`, d <= tol && cpu.some((v) => v > 0),
+        `maxAbsDiff=${d.toExponential(2)} tol=${tol}`);
+    }
+    check('aid: the simulation state is identical with an aid accumulating every step (30 steps, both modes) and without one',
+      maxAbsDiff(withAid.readState(), without.readState()) === 0 && withAid.generation === without.generation, `generation=${withAid.generation}`);
+    check('aid: no pending GL error', gl.getError() === gl.NO_ERROR);
+    ov.dispose(); withAid.dispose(); without.dispose();
+
+    // Cost, reported (not asserted): GPU time of one step pass and of one accumulation pass, by timer query when available.
+    const ext = gl.getExtension('EXT_disjoint_timer_query_webgl2');
+    if (!ext) {
+      log('info  aid cost: EXT_disjoint_timer_query_webgl2 unavailable here; the extra pass per step is unmeasured', 'info');
+    } else {
+      const timeMs = async (fn) => {
+        const q = gl.createQuery();
+        gl.beginQuery(ext.TIME_ELAPSED_EXT, q); fn(); gl.endQuery(ext.TIME_ELAPSED_EXT);
+        for (let i = 0; i < 1000; i++) {
+          await new Promise((ok) => setTimeout(ok, 5));
+          if (gl.getQueryParameter(q, gl.QUERY_RESULT_AVAILABLE)) {
+            const disjoint = gl.getParameter(ext.GPU_DISJOINT_EXT), ns = gl.getQueryParameter(q, gl.QUERY_RESULT);
+            gl.deleteQuery(q);
+            return disjoint ? null : ns / 1e6;
+          }
+        }
+        gl.deleteQuery(q);
+        return null;
+      };
+      for (const n of [128, 512]) {
+        const sim = new LeniaSimulation(gl, caps, normalizeParams({ gridSize: n, radius: 13, seed: 3 }).params);
+        sim.reset(randomDiscSeed(n, { radiusFraction: 0.3, seed: 3 }));
+        const acc = new OverlayAccumulator(gl, caps, n);
+        const reps = n === 512 ? 4 : 20;
+        await timeMs(() => { sim.step(); acc.accumulate(sim.stateTexture, sim.previousTexture, OVERLAY_MODE.activity, 0.95); }); // warm-up
+        const step = await timeMs(() => { for (let i = 0; i < reps; i++) sim.step(); });
+        const aid = await timeMs(() => { for (let i = 0; i < reps; i++) acc.accumulate(sim.stateTexture, sim.previousTexture, OVERLAY_MODE.activity, 0.95); });
+        log(step === null || aid === null
+          ? `info  aid cost at grid ${n}: timer query disjoint or unavailable; unmeasured`
+          : `info  aid cost at grid ${n} (GPU timer, ${reps} passes each): step ${(step / reps).toFixed(3)} ms/pass, accumulation ${(aid / reps).toFixed(3)} ms/pass (${((aid / step) * 100).toFixed(2)} % of a step)`, 'info');
+        acc.dispose(); sim.dispose();
+      }
+    }
   }
 } catch (e) {
   failures++;
