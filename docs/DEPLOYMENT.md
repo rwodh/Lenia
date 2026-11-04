@@ -8,9 +8,9 @@ The repository root, as tracked by Git, is the site (owner decision D3, 3 Nov 20
 announcement). That includes `index.html`, `styles.css`, `src/`, the browser check pages under `tests/browser/` (useful for
 checking the live host), `tests/unit/`, `tools/`, `docs/`, the Markdown files and `.claude/skills/`. All of it becomes public.
 
-- Deploy from Git (the host clones tracked files only). Untracked local files such as `.claude/settings.local.json` (ignored by
-  the owner's global Git ignore file, not by this repository) and `.vscode/` are then not published. A direct upload of the
-  working folder would include them; if a direct upload is ever used, upload a clean export (`git archive`) instead.
+- Deploy from Git (the host clones tracked files only). Local files such as `.claude/settings.local.json`, `.claude/launch.json`
+  and `.vscode/` are ignored by the repository's `.gitignore`, so they are then not published. A direct upload of the working
+  folder would still include them; if a direct upload is ever used, upload a clean export (`git archive`) instead.
 - `?debug` exposes `window.leniaApp` (needed by `tests/browser/ui-flow.html`). It reads and drives the page's own state only.
 - `_headers` is read by the host and not served (the local server mimics this).
 

@@ -59,17 +59,21 @@ npm test         # unit tests (node:test, no dependencies)
 
 Browser GPU checks (the last line of each must read `ALL PASS`):
 
-- `http://localhost:8080/tests/browser/gpu-parity.html` - GPU shaders vs the CPU reference, colour map, shader-error reporting, and the
-  asynchronous state readback (exact copy, tagged with the generation at submission, float32 and float16 states).
+- `http://localhost:8080/tests/browser/gpu-parity.html` - GPU shaders vs the CPU reference, colour map, shader-error reporting, the
+  asynchronous state readback (exact copy, tagged with the generation at submission, float32 and float16 states), the World View
+  (default view byte-identical to the pre-view shader, JS mapping against the drawn pixels, seamless wrap), the overlays (against the
+  CPU rule, state unchanged, cost as information lines) and the add stamp (against its CPU twin).
 - `http://localhost:8080/tests/browser/ui-flow.html` - drives the real page: Play/Pause/Step/Reset/parameters/speed/colour, organism selection and switching, the
   Observatory (samples, generation tags, Reset/switch/restore clearing, GPU back-off, readback failure, narrow layout), a
   check that repeated interaction never creates a second animation loop, and the whole guided tour including its
-  first-visit memory. Takes about a minute on a software GPU.
+  first-visit memory; the World View inputs and lifecycle, placement, the overlays, and adding organisms (exact state, sample tags,
+  overlays kept, cap, Reset, locks). It needs animation frames, so keep the page visible: a hidden browser pane stalls it. It took
+  several minutes in the built-in pane on the AMD renderer.
 - `http://localhost:8080/tests/browser/orbium-gpu.html` - each library organism on the GPU (O2u, then O2b with `[O2b]` lines): parity after
   1/5/20 steps, a long run (`?long=1000`), observable parity with the CPU, grid-size independence, and the Observatory's sampled metrics
   against the CPU reference. Pointwise GPU-vs-CPU equality is
   asserted over a short horizon only (200 steps for O2u, 20 for O2b); long-term correctness is judged by behavioural metrics, and long-term
-  pointwise equivalence is not claimed (`DECISIONS.md` 23). Takes about a minute on a software GPU.
+  pointwise equivalence is not claimed (`DECISIONS.md` 23). It took from about a minute to over ten minutes in the built-in pane.
 
 URL options (validated and clamped; see `src/simulation/params.js`):
 `?grid=64|128|256|512`  `?radius=3..24`  `?seed=<integer>`  `?tour` (open the guided tour)  `?debug` (exposes `window.leniaApp`).
