@@ -36,6 +36,11 @@ export function createKernelTexture(gl, kernel) {
   return newTexture(gl, gl.R32F, kernel.size, kernel.size, kernel.data, `kernel ${kernel.size}x${kernel.size}`);
 }
 
+/** Single-channel 32-bit float texture holding a decoded pattern ({ width, height, data }), row 0 first. Read-only. */
+export function createPatternTexture(gl, pattern) {
+  return newTexture(gl, gl.R32F, pattern.width, pattern.height, pattern.data, `pattern ${pattern.width}x${pattern.height}`);
+}
+
 /** Framebuffer rendering into `tex`; throws if the GPU rejects the combination. */
 export function createFramebuffer(gl, tex) {
   const fbo = gl.createFramebuffer();

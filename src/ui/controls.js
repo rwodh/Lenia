@@ -1,4 +1,4 @@
-import { SPEEDS, UI_RANGES, PALETTES, VISUAL } from '../config.js';
+import { SPEEDS, UI_RANGES, PALETTES, VISUAL, ADDITIONS } from '../config.js';
 import { PATTERN_LIBRARY, getPattern } from '../simulation/patterns.js';
 
 // The id 'observatory' is internal (shader uniform, tests); its label is 'Ocean' so it is not confused with the Observatory card.
@@ -81,7 +81,10 @@ export class Controls {
       facts: root.querySelector('[data-pattern="facts"]'),
       locked: root.querySelector('[data-pattern="locked"]'),
       start: root.querySelector('[data-pattern="start"]'),
+      added: root.querySelector('[data-pattern="added"]'),
     };
+    this.addBtn = root.getElementById('btn-add');
+    this.addBtn.addEventListener('click', () => app.armAdding(!app.adding));
     this.placeBtn = root.getElementById('btn-place');
     this.centreBtn = root.getElementById('btn-centre');
     this.canvas = app.canvas;
@@ -115,8 +118,9 @@ export class Controls {
     const tag = t && t.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     if (document.getElementById('tour')?.dataset.modal === 'true') return;
-    if (e.key === 'Escape' && this.app.placing) {
-      this.app.armPlacement(false);
+    if (e.key === 'Escape' && (this.app.placing || this.app.adding)) {
+      if (this.app.placing) this.app.armPlacement(false);
+      if (this.app.adding) this.app.armAdding(false);
     } else if (e.code === 'Space') {
       if (tag === 'BUTTON') return; // the focused button handles Space itself
       e.preventDefault();
@@ -168,8 +172,12 @@ export class Controls {
     this.placeBtn.disabled = locked;
     this.centreBtn.disabled = locked || snap.placement === null;
     this.placeBtn.setAttribute('aria-pressed', String(snap.placing && !locked));
-    this.canvas?.classList.toggle('placing', snap.placing && !locked);
+    const full = snap.additions.length >= ADDITIONS.max;
+    this.addBtn.disabled = locked || full;
+    this.addBtn.setAttribute('aria-pressed', String(snap.adding && !locked));
+    this.canvas?.classList.toggle('placing', (snap.placing || snap.adding) && !locked);
     const t = this.patternText;
+    t.added.textContent = noLibrary ? '' : `Added: ${snap.additions.length} of ${ADDITIONS.max}${full ? ' (Reset removes them)' : ''}`;
     t.start.textContent = noLibrary ? '' : snap.placement ? `Start: cell (${snap.placement.x}, ${snap.placement.y})` : 'Start: centre';
     if (noLibrary) {
       t.description.textContent = 'Random noise start.';

@@ -81,3 +81,26 @@ export function placePatternAt(size, pattern, x, y) {
   }
   return out;
 }
+
+/**
+ * The CPU twin of the GPU stamp (Phase 4b, src/shaders/stamp.frag.js): a copy of `state` in which every cell covered by the
+ * pattern, placed as placePatternAt places it (anchor on (x, y), wrapping), holds max(state, pattern). Cells outside the
+ * pattern's box are unchanged. Pure; `state` is not modified.
+ */
+export function stampMax(state, size, pattern, x, y) {
+  if (!(state instanceof Float32Array) || state.length !== size * size) {
+    throw new RangeError(`state must be a Float32Array of ${size * size} values`);
+  }
+  const patch = placePatternAt(size, pattern, x, y); // validates size, fit and the cell
+  const out = new Float32Array(state);
+  const { width, height } = pattern;
+  const ox = x - Math.floor(width / 2), oy = y - Math.floor(height / 2);
+  for (let r = 0; r < height; r++) {
+    const gy = (((oy + r) % size) + size) % size;
+    for (let c = 0; c < width; c++) {
+      const i = gy * size + ((((ox + c) % size) + size) % size);
+      out[i] = Math.max(out[i], patch[i]);
+    }
+  }
+  return out;
+}

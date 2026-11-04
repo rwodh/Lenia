@@ -8,9 +8,9 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 |---|---|
 | 1 Foundation | Done |
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
-| 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28), start-cell placement of the selected organism (decision 29). Not done: more patterns, adding a second organism to a live world (designed, not implemented: `docs/design/second-organism.md`) |
+| 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28), start-cell placement of the selected organism (decision 29). Not done: more patterns, adding copies of the selected organism to a running world (decision 31) |
 | 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart), and two display-only aids: trails and an activity map (decision 30). No speed estimate |
-| 5 Quality | Partial: 114 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 5 Quality | Partial: 120 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
@@ -30,7 +30,7 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | Motion trails | Implemented (display only; decaying per-step maximum, decision 30) |
 | Density / activity heatmap | Implemented as an activity map (decaying per-step sum of |change|, decision 30); no density map |
 | Controlling simulation speed (proposal objective) | Implemented (0.25x to 2x) |
-| Placing seeds (proposal objective) | Partial: the selected organism can start at any cell (decision 29); adding one to a running world is designed only |
+| Placing seeds (proposal objective) | Implemented: the selected organism starts at any cell (decision 29), and up to 8 copies can be added to a running world (decision 31) |
 
 ## Verified facts
 Environment. Items 1 to 13 were recorded earlier in headless Chromium on a software renderer (ANGLE with SwiftShader, one
@@ -151,6 +151,14 @@ outside the repo produced it.
     view input (paused: identical read-back), the view kept by Reset, a pattern switch and a context restore, reset by the
     tour, blocked during its modal steps, one animation loop, no GL error, no overflow at 390 px. Touch input was exercised
     with synthetic pointer events only; no real touch device was used.
+24. **Placement, overlays and additions** (decisions 29 to 31; in repo: `placement.test.js`, `additions.test.js`, `gpu-parity.html`,
+    `ui-flow.html`; AMD renderer above). A click places the unchanged organism exactly (GPU state equals `placePatternAt`). Trails
+    and activity equal the same rules computed on the CPU from the GPU states (trails exact, activity within 1.2e-7) and the state
+    with them on is identical to the state without. The stamp that adds a copy equals its CPU twin exactly in float32 and within
+    4.9e-4 in float16, without advancing the generation. After an addition, samples at the same generation are told apart by their
+    addition count (mass 76.86 with 0 added, 153.73 with 1, generation 0), and the first activity increase is at most 1/T per cell
+    (measured 0.1000), so the insertion is not recorded as activity. On the CPU reference two copies half a world apart evolve
+    exactly as two independent copies (grid 128, 30 steps). What happens when organisms meet is not claimed.
 
 ## Unresolved or unverified
 - **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
@@ -193,7 +201,7 @@ outside the repo produced it.
 
 ## Planned (not started)
 1. Performance pass on real hardware (frame rate, 2x speed, R16F fallback accuracy, the `maxTapsPerStep` cap); proofread the Bangla.
-2. More verified patterns beyond O2u and O2b; adding a second organism to a live world (design: `docs/design/second-organism.md`, waiting for the owner).
+2. More verified patterns beyond O2u and O2b; adding a different species to a running world (needs its own decision: it would run at the world's parameters, not its own).
 3. World View follow-ups: a follow camera (needs smoothing of the sparse, asynchronous Observatory samples), value inspection under the pointer (needs the readback path), an optional nearest-neighbour magnification.
 4. Visual aids follow-ups: a separate colour map for activity (it now shares the state's), and a measured frame-rate effect in an ordinary browser.
 5. Deployment: the owner deploys and fills in the real-browser results table in `docs/DEPLOYMENT.md`.

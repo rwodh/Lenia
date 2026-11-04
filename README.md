@@ -41,6 +41,10 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
 - **Placement**: *Place*, then click a cell in the view: the selected organism starts with its centre on that cell (copied
   unchanged, wrapping across the edges). Reset restores it there, switching organism keeps the cell, *Centre* returns to the
   launch position, and Escape cancels *Place*. The guided tour always starts and ends with the centred Orbium.
+- **Add** (up to 8 per run): *Add*, then click a cell: a copy of the selected organism joins the running world there (where the
+  world is not empty, each cell keeps the larger value). The generation does not change; the Observatory keeps its history,
+  marks the addition on the chart and tells samples before and after it apart. Reset removes added copies; what happens when
+  organisms meet is shown, not predicted.
 - Kernel radius and grid size are shown but not adjustable (Orbium only exists at radius 13; see `DECISIONS.md` 10).
 
 ## Run it
@@ -88,6 +92,7 @@ src/gl/                     context + capability probe, program compile/link, te
                             readback.js = asynchronous state copy (pixel-pack buffer + fence; never waits on the GPU)
 src/shaders/                GLSL ES 3.00 as JS string modules (no fetch, no bundler); overlay-accumulate.frag.js = trails/activity
 src/gl/overlay.js           trails/activity accumulator: its own ping-pong textures, one pass per step, read-only towards the state
+src/gl/stamp.js             adds a pattern copy into the live state (max), one pass; stamp.frag.js; CPU twin stampMax in seed.js
 src/simulation/             kernel/growth math, params validation, seeds and placement (seed.js), CPU reference  (pure JS, Node-testable)
                             patterns.js = verified upstream organism data and the two-entry registry (O2u, O2b); rle.js = strict decoder
                             startup.js = decides the starting state + parameters (Orbium O2u, or noise if the URL is incompatible); planPattern() plans a selection

@@ -1,7 +1,21 @@
 # Design note: adding a second organism to a live world (Phase 4b)
 
-Status: **design only, not implemented**; waiting for the owner's decision (3 Nov 2026). Nothing here is Verified; every
-behavioural statement below is a plan or an expectation to be tested.
+Status: **approved by the owner on 3 Nov 2026 for v1 as proposed** (GPU stamp pass, `max`, copies of the selected organism
+only, Reset removes additions; the Observatory keeps its history with a marker per addition), **with three conditions** (next
+section). Implemented on `feature/second-organism`; the evidence is in `DECISIONS.md` 31 and the Phase 4b report. Statements
+below that are not listed there as Verified remain plans or expectations.
+
+## Owner conditions (3 Nov 2026)
+1. **Tell samples before and after an addition apart.** An addition does not advance the generation, so two different states
+   share one generation number. Every readback is tagged with the number of additions made so far (`adds`) as well as the
+   generation and epoch at submission; a result whose `adds` differs from the App's current count is discarded, and history
+   samples and the latest sample carry it, so tests and the chart can separate them.
+2. **Say what an addition does to the trails and activity overlays.** They are **kept** (not cleared). The addition itself is
+   not a step, so no accumulation pass runs for it. Trails then include the added copy from the next step on (it is part of the
+   state). Activity compares each step's result with the state just before that step, which already contains the copy, so the
+   insertion itself is never recorded as activity; this is tested.
+3. **Cap the number of additions** with a config constant (`ADDITIONS.max`, 8). Further additions are refused until Reset;
+   that bounds the chart markers, the label and the test time.
 
 ## Why
 Phase 4a (decision 29) only moves where the selected organism *starts*. On a periodic world that is a translation, so on its

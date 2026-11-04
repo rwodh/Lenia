@@ -15,6 +15,7 @@ export class Observatory {
     this.canvas = q('chart');
     this.ctx = this.canvas.getContext('2d');
     this.drawnVersion = -1;
+    this.drawnAdds = -1;
     this.colours = null;
 
     // Redraw on resize (narrow layouts); the ResizeObserver callback runs outside the animation loop.
@@ -42,7 +43,7 @@ export class Observatory {
         : `${c.x.toFixed(1)}, ${c.y.toFixed(1)}`;
       this.sample.textContent = `generation ${latest.generation}`;
     }
-    if (snap.historyVersion !== this.drawnVersion) this.drawChart();
+    if (snap.historyVersion !== this.drawnVersion || snap.additions.length !== this.drawnAdds) this.drawChart();
   }
 
   readColours() {
@@ -52,12 +53,14 @@ export class Observatory {
   }
 
   drawChart() {
-    const h = this.app.history;
+    const h = this.app.history, adds = this.app.additions;
     this.drawnVersion = h.version;
+    this.drawnAdds = adds.length;
     const s = h.summary();
-    const text = s
+    const added = adds.length ? ` Organisms added at generation ${adds.map((a) => a.generation).join(', ')} (marked).` : '';
+    const text = (s
       ? `Mass by generation, ${s.count} samples from generation ${s.from} to ${s.to}: latest ${s.latest.toFixed(2)}, lowest ${s.min.toFixed(2)}, highest ${s.max.toFixed(2)}.`
-      : 'Mass by generation: no samples yet.';
+      : 'Mass by generation: no samples yet.') + added;
     this.summary.textContent = text;
     this.canvas.setAttribute('aria-label', text);
 
@@ -76,6 +79,15 @@ export class Observatory {
     ctx.strokeStyle = this.colours.grid;
     ctx.lineWidth = dpr;
     ctx.beginPath(); ctx.moveTo(pad, y(0)); ctx.lineTo(w - pad, y(0)); ctx.stroke();
+    // Phase 4b: a dashed vertical marker at the generation of each addition (an addition does not advance the generation, so
+    // the samples just before and after it share that generation and the line jumps there).
+    ctx.strokeStyle = this.colours.muted;
+    ctx.setLineDash([3 * dpr, 3 * dpr]);
+    for (const a of adds) {
+      if (a.generation < s.from || a.generation > s.to) continue;
+      ctx.beginPath(); ctx.moveTo(x(a.generation), pad); ctx.lineTo(x(a.generation), ht - pad); ctx.stroke();
+    }
+    ctx.setLineDash([]);
     ctx.strokeStyle = this.colours.line;
     ctx.lineWidth = 1.5 * dpr;
     ctx.beginPath();

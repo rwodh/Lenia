@@ -2,14 +2,17 @@ import { createGLContext } from './gl/context.js';
 import { FrameFence } from './gl/fence.js';
 import { AsyncReadback } from './gl/readback.js';
 import { OverlayAccumulator, OVERLAY_MODE } from './gl/overlay.js';
+import { StampPass } from './gl/stamp.js';
 import { computeObservables } from './simulation/observables.js';
 import { shouldSample, sampleIntervalFor, SampleHistory } from './simulation/sampler.js';
-import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES, VIEW, VISUAL } from './config.js';
+import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES, VIEW, VISUAL, ADDITIONS } from './config.js';
 import * as viewMath from './render/view-math.js';
 import { Renderer } from './render/renderer.js';
 import { LeniaSimulation } from './simulation/lenia.js';
 import { normalizeParams } from './simulation/params.js';
 import { planPattern } from './simulation/startup.js';
+import { getPattern } from './simulation/patterns.js';
+import { decodeRle } from './simulation/rle.js';
 import { planFrameSteps, MAX_PENDING_STEPS } from './simulation/scheduler.js';
 
 /**
@@ -33,6 +36,11 @@ export class App {
     this.patternId = patternId;
     this.placement = null; // null = centred (as at launch), else the cell { x, y } the organism's centre starts on
     this.placing = false; // "Place" mode armed: the next click on the world sets the placement
+    // Phase 4b: copies of the selected organism added to the running world ({ x, y, generation } each, at most ADDITIONS.max).
+    // Interventions, not part of the start: Reset (and a context restore, which re-seeds the start) removes them.
+    this.additions = [];
+    this.adding = false; // "Add" mode armed: the next click on the world adds a copy there
+    this.stamp = null; // StampPass, created on the first addition
     this.onFatal = onFatal;
 
     this.paused = false;
@@ -80,6 +88,7 @@ export class App {
       this.gpuLost = true; // initGpu() must not delete the dead objects (see there)
       this.readback = null; // its buffer and fence died with the context; dropped, not disposed
       this.overlay = null; // likewise; recreated by initGpu() if a mode is on
+      this.stamp = null; // likewise; recreated on the next addition
       this.clearObservations();
       this.setObservatoryUnavailable('graphics context lost');
       this.hud.setNote('Graphics context lost. Waiting for the browser to restore it...');
@@ -106,8 +115,11 @@ export class App {
       this.renderer?.dispose();
       this.fence?.dispose();
       this.overlay?.dispose();
+      this.stamp?.dispose();
     }
     this.overlay = null;
+    this.stamp = null;
+    this.additions = []; // the state is re-seeded from the start below
     this.gpuLost = false;
     const { gl, caps } = createGLContext(this.canvas);
     this.caps = caps;
@@ -160,10 +172,12 @@ export class App {
       if (this.observation.status !== 'unavailable') this.setObservatoryUnavailable(rb.failed);
       return;
     }
-    if (!result || result.tag.epoch !== this.epoch) return; // nothing yet, or the state was replaced since the request
+    // Nothing yet; or the state was replaced (epoch) or an organism was added (adds) since the request: an addition does not
+    // advance the generation, so the generation alone cannot tell the state before it from the state after it.
+    if (!result || result.tag.epoch !== this.epoch || result.tag.adds !== this.additions.length) return;
     const o = computeObservables(result.state, this.sim.size);
-    this.history.push(result.tag.generation, o.mass);
-    this.observation = { status: 'ok', reason: '', latest: { generation: result.tag.generation, ...o } };
+    this.history.push(result.tag.generation, o.mass, result.tag.adds);
+    this.observation = { status: 'ok', reason: '', latest: { generation: result.tag.generation, adds: result.tag.adds, ...o } };
     this.emit(); // the card shows a sample as soon as it is measured (rate-limited by requestSample)
   }
 
@@ -182,7 +196,7 @@ export class App {
     });
     if (!due) return;
     try {
-      if (rb.request(this.sim.stateFramebuffer, { generation: this.sim.generation, epoch: this.epoch })) {
+      if (rb.request(this.sim.stateFramebuffer, { generation: this.sim.generation, epoch: this.epoch, adds: this.additions.length })) {
         this.lastSampleMs = now;
         this.lastSampledGeneration = this.sim.generation;
       }
@@ -217,6 +231,9 @@ export class App {
     Object.assign(this.params, this.baseParams);
     this.sim?.reset(this.initialState);
     this.overlay?.clear(); // its history described the state that was just replaced
+    this.additions = [];
+    this.adding = false;
+    this.hud.setPattern(this.displayLabel);
     this.accumulatorMs = 0;
     this.pendingSteps = 0;
     this.clearObservations();
@@ -244,11 +261,17 @@ export class App {
     this.reset();
   }
 
+  /** The pattern label plus the number of added copies, e.g. "Orbium unicaudatus (O2u) + 1 added". */
+  get displayLabel() {
+    return this.additions.length ? `${this.patternLabel} + ${this.additions.length} added` : this.patternLabel;
+  }
+
   // ---- Placement: where the selected organism starts (Reset restores it there). No change to the simulation rules. ----
 
   /** Arm or disarm "Place" mode: while armed, a click on the world chooses the start cell (see ViewControls onClick). */
   armPlacement(on) {
     this.placing = !!on && this.patternId !== null;
+    if (this.placing) this.adding = false; // one click mode at a time
     this.emit();
   }
 
@@ -261,6 +284,36 @@ export class App {
     this.placement = Object.freeze(placement);
     this.placing = false;
     this.reset();
+  }
+
+  // ---- Phase 4b: add a copy of the selected organism to the running world (decision 31) ----
+
+  /** Arm or disarm "Add" mode: while armed, a click on the world adds a copy there. Refused at the cap. */
+  armAdding(on) {
+    this.adding = !!on && this.patternId !== null && this.additions.length < ADDITIONS.max;
+    if (this.adding) this.placing = false; // one click mode at a time
+    this.emit();
+  }
+
+  /**
+   * Add a copy of the selected organism with its centre on cell { x, y }, into the current state, combined with max (src/gl/stamp.js).
+   * Not a step: the generation is unchanged. The Observatory keeps its history; a readback in flight is discarded (its tag has
+   * the old addition count) and the next sample is taken even at the same generation. The overlays are kept.
+   */
+  addAt(cell) {
+    if (this.patternId === null) throw new RangeError('this world has no organism to add');
+    if (this.additions.length >= ADDITIONS.max) throw new RangeError(`at most ${ADDITIONS.max} organisms can be added; Reset removes them`);
+    const x = cell?.x, y = cell?.y, n = this.sim.size;
+    if (![x, y].every((v) => Number.isInteger(v) && v >= 0 && v < n)) throw new RangeError(`cell (${x}, ${y}) is not a cell of the ${n}x${n} grid`);
+    if (!this.stamp) this.stamp = new StampPass(this.sim.gl);
+    this.stamp.apply(this.sim, this.patternId, decodeRle(getPattern(this.patternId).rle), x, y);
+    this.additions = [...this.additions, Object.freeze({ x, y, generation: this.sim.generation })];
+    this.adding = false;
+    this.readback?.cancel();
+    this.lastSampledGeneration = -1; // sample the new state even though the generation has not changed
+    this.lastSampleMs = 0;
+    this.hud.setPattern(this.displayLabel);
+    this.emit();
   }
 
   /** Back to the centred start (as at launch). */
@@ -376,9 +429,11 @@ export class App {
       visualMode: this.visualMode,
       decay: this.decay,
       gridSize: this.sim ? this.sim.size : this.params.gridSize,
-      patternLabel: this.patternLabel,
+      patternLabel: this.displayLabel,
       patternId: this.patternId,
       placement: this.placement,
+      additions: this.additions, // replaced (never mutated) on each change
+      adding: this.adding,
       placing: this.placing,
       observation: this.observation, // replaced (never mutated) on each change
       historyVersion: this.history.version,
@@ -456,7 +511,7 @@ export class App {
           radius: this.params.radius,
           format: this.caps.stateFormat.name,
           gpuBound: this.gpuBound,
-          patternLabel: this.patternLabel,
+          patternLabel: this.displayLabel,
         });
         this.emit();
       }

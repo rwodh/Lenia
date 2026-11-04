@@ -58,6 +58,15 @@ export class LeniaSimulation {
     this.generation = 0;
   }
 
+  /**
+   * Replace the state by drawing into the other ping-pong target: `render(targetFramebuffer, currentStateTexture)` (used by the
+   * Phase 4b stamp, src/gl/stamp.js). Not a step: the generation is unchanged, and the step shader is not involved.
+   */
+  replaceState(render) {
+    render(this.targets[1 - this.read].fbo, this.stateTexture);
+    this.read = 1 - this.read;
+  }
+
   /** Advance the simulation by one step. */
   step() {
     const { gl, size, params, program } = this;

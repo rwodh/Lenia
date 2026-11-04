@@ -1,11 +1,11 @@
 // Integration check of the real page: explorer controls (play/pause/step/reset/params/speed/palette), single animation
 // loop, and the Guided Discovery tour including its first-visit memory. Uses only the page's own DOM and the ?debug hook.
-import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY, VIEW } from '../../src/config.js';
+import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY, VIEW, ADDITIONS } from '../../src/config.js';
 import { bufferToWorld } from '../../src/render/view-math.js';
 import { computeObservables } from '../../src/simulation/observables.js';
 import { getPattern } from '../../src/simulation/patterns.js';
 import { decodeRle } from '../../src/simulation/rle.js';
-import { placePatternCentred, placePatternAt } from '../../src/simulation/seed.js';
+import { placePatternCentred, placePatternAt, stampMax } from '../../src/simulation/seed.js';
 
 /** The exact initial state a library pattern must put on the GPU (page grid is 64). */
 const seedOf = (id, n = 64) => placePatternCentred(n, decodeRle(getPattern(id).rle));
@@ -612,6 +612,106 @@ try {
     check('aid: one animation loop and no GL error', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
   }
 
+  // ---------- Phase 4b: adding copies of the selected organism to the running world ----------
+  P = await load('');
+  {
+    const A = P.app, c = A.canvas, n = A.sim.size, pat = decodeRle(getPattern('O2u').rle);
+    const rect = () => c.getBoundingClientRect();
+    const fire = (type, x, y) => c.dispatchEvent(new P.w.PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    const addedText = () => P.$('[data-pattern=added]').textContent;
+    const exact = A.caps.stateFormat.name === 'float32';
+    A.pause();
+    await until(() => A.observation.latest && A.observation.latest.generation === A.sim.generation, 'a sample of the paused state', 60000);
+    check('add: nothing added at start; Add available; label shows the cap', A.additions.length === 0 && !P.$('#btn-add').disabled && addedText() === `Added: 0 of ${ADDITIONS.max}`);
+
+    // one click mode at a time
+    P.click('#btn-place'); P.click('#btn-add');
+    check('add: arming Add disarms Place (one click mode at a time)', A.adding && !A.placing && P.$('#btn-add').getAttribute('aria-pressed') === 'true');
+
+    // a click adds a copy, combined with max; not a step; history kept; the next sample is tagged with the new count
+    const before = A.sim.readState(), g0 = A.sim.generation, hist0 = A.history.length;
+    const r = rect(), px = Math.round(r.left + r.width * 0.5 + r.height * 0.3), py = Math.round(r.top + r.height * 0.2);
+    const cell = A.cellAt((px - r.left) * (c.width / r.width), (r.bottom - py) * (c.height / r.height));
+    fire('pointerdown', px, py); fire('pointerup', px, py);
+    const after = A.sim.readState();
+    check('add: a click adds a copy at the clicked cell: state = max(previous, placed copy) exactly; generation unchanged',
+      A.additions.length === 1 && A.additions[0].x === cell.x && A.additions[0].y === cell.y && A.sim.generation === g0
+      && (exact ? diffMax(after, stampMax(new Float32Array(before), n, pat, cell.x, cell.y)) === 0 : true), `cell (${cell.x}, ${cell.y})`);
+    check('add: the mode disarms; the HUD and the card count the copy; nothing was cleared from the Observatory history; no readback in flight',
+      !A.adding && P.$('[data-hud=pattern]').textContent === 'Orbium unicaudatus (O2u) + 1 added' && addedText() === `Added: 1 of ${ADDITIONS.max}`
+      && A.history.length === hist0 && !A.readback.busy);
+    await until(() => A.observation.latest && A.observation.latest.adds === 1, 'a sample of the state after the addition', 60000);
+    const same = [...Array(A.history.length).keys()].map((k) => A.history.at(k)).filter((s) => s.generation === g0);
+    check('add: samples before and after the addition share the generation and are told apart by their addition count',
+      same.some((s) => s.adds === 0) && same.some((s) => s.adds === 1) && Math.abs(A.observation.latest.mass - after.reduce((s, v) => s + v, 0)) < 1e-3,
+      `samples at generation ${g0}: ${same.map((s) => `adds ${s.adds} mass ${s.mass.toFixed(2)}`).join('; ')}`);
+    check('add: the chart summary names the addition (the marker\'s text equivalent)', P.$('[data-obs=summary]').textContent.includes(`added at generation ${g0}`));
+
+    // overlays are kept; the insertion itself is never recorded as activity
+    P.click('#btn-reset');
+    A.setVisualMode('activity');
+    for (let i = 1; i <= 2; i++) { P.click('#btn-step'); await until(() => A.sim.generation === i, `activity step ${i}`); }
+    const actBefore = A.overlay.readValues();
+    A.addAt({ x: 4, y: 4 });
+    check('add: the activity overlay is kept, unchanged by the addition itself', diffMax(A.overlay.readValues(), actBefore) === 0);
+    P.click('#btn-step'); await until(() => A.sim.generation === 3, 'step after the addition');
+    const act = A.overlay.readValues(), dt = 1 / A.params.timeSteps;
+    let maxIncrease = 0; for (let i = 0; i < act.length; i++) maxIncrease = Math.max(maxIncrease, act[i] - A.decay * actBefore[i]);
+    check('add: the first activity pass after an addition records only that step\'s change (at most 1/T per cell), not the inserted copy',
+      maxIncrease <= dt + 1e-6, `largest increase ${maxIncrease.toFixed(4)} (1/T = ${dt})`);
+    A.setVisualMode('trails');
+    A.addAt({ x: 40, y: 4 });
+    P.click('#btn-step'); await until(() => A.sim.generation === 4, 'step with trails');
+    const tr = A.overlay.readValues(), copy = placePatternAt(n, pat, 40, 4);
+    let covered = 0, cells = 0; for (let i = 0; i < copy.length; i++) if (copy[i] > 0.5) { cells++; if (tr[i] > 0.3) covered++; }
+    check('add: trails show the added copy from the next step on', cells > 0 && covered / cells > 0.9, `${covered} of ${cells} bright cells of the copy`);
+    A.setVisualMode('off');
+
+    // the cap; bad input; running additions
+    P.click('#btn-reset');
+    P.click('#btn-play');
+    const spots = [[4, 4], [20, 4], [36, 4], [52, 4], [4, 52], [20, 52], [36, 52], [52, 52]];
+    for (const [x, y] of spots) A.addAt({ x, y });
+    let refused = 0;
+    for (const bad of [{ x: 1, y: 1 }]) { try { A.addAt(bad); } catch (e) { if (e.name === 'RangeError') refused++; } }
+    A.armAdding(true);
+    check(`add: at most ${ADDITIONS.max} copies; the next is refused, Add is disabled and the card says Reset removes them`,
+      A.additions.length === ADDITIONS.max && refused === 1 && !A.adding && P.$('#btn-add').disabled && addedText().includes('Reset removes them'));
+    check('add: additions while running keep the simulation running and record their generations',
+      !A.paused && A.additions.every((a, i) => i === 0 || a.generation >= A.additions[i - 1].generation) && A.sim.gl.getError() === A.sim.gl.NO_ERROR);
+    P.click('#btn-reset');
+    let badRefused = 0;
+    for (const bad of [{ x: n, y: 0 }, { x: -1, y: 1 }, { x: 0.5, y: 1 }, { x: NaN, y: 1 }, null]) { try { A.addAt(bad); } catch (e) { if (e.name === 'RangeError') badRefused++; } }
+    check('add: cells outside the grid, fractional cells and NaN are refused', badRefused === 5 && A.additions.length === 0);
+
+    // Reset and a context restore remove additions; the tour locks Add
+    A.pause();
+    A.addAt({ x: 8, y: 56 });
+    P.click('#btn-reset');
+    check('add: Reset removes the added copies (state = the start exactly, label and history cleared)',
+      A.additions.length === 0 && diffMax(A.sim.readState(), seedOf('O2u')) === 0 && P.$('[data-hud=pattern]').textContent === 'Orbium unicaudatus (O2u)' && A.history.length === 0);
+    A.addAt({ x: 8, y: 56 });
+    const ext = A.sim.gl.getExtension('WEBGL_lose_context');
+    if (ext) {
+      const old = A.sim;
+      ext.loseContext(); await sleep(300); ext.restoreContext();
+      await until(() => A.sim !== old && A.running, 'context restore', 30000);
+      check('add: a context restore re-seeds the start, so added copies are gone', A.additions.length === 0 && diffMax(A.sim.readState(), seedOf('O2u')) <= (exact ? 0 : 1e-3));
+      A.addAt({ x: 8, y: 56 });
+      check('add: adding works on the restored context (the stamp is recreated)', A.additions.length === 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR);
+    }
+    P.click('#btn-add');
+    P.click('#tour-open');
+    check('add: opening the tour removes additions, disarms Add and locks it', A.additions.length === 0 && !A.adding && P.$('#btn-add').disabled);
+    P.d.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: 'Escape' }));
+    P.click('#btn-add');
+    P.d.body.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    check('add: Escape disarms Add', !A.adding);
+    P.probe.max = 0;
+    await sleep(2000);
+    check('add: one animation loop and no GL error', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
+  }
+
   // ---------- returning visit: no auto tour; reopen works; experiment is interactive ----------
   P = await load('');
   check('returning visit: tour does not auto-open', P.$('#tour').hidden);
@@ -668,7 +768,7 @@ try {
   try { P.app.selectPattern('O2u'); } catch (e) { noiseThrew = e.name === 'RangeError'; }
   check('noise start: no organism library (selector locked with a reason, selection refused, no pattern id)',
     P.app.patternId === null && noiseThrew && [...P.d.querySelectorAll('#seg-pattern button')].every((b) => b.disabled) && !P.$('[data-pattern=locked]').hidden);
-  check('noise start: Place and Centre are disabled (no organism to place)', P.$('#btn-place').disabled && P.$('#btn-centre').disabled);
+  check('noise start: Place, Centre and Add are disabled (no organism)', P.$('#btn-place').disabled && P.$('#btn-centre').disabled && P.$('#btn-add').disabled);
 } catch (e) {
   failures++;
   log(`FAIL  unexpected exception: ${e && e.stack ? e.stack : e}`, 'fail');
