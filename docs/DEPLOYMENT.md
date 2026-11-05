@@ -12,7 +12,8 @@ checking the live host), `tests/unit/`, `tools/`, `docs/`, the Markdown files an
   and `.vscode/` are ignored by the repository's `.gitignore`, so they are then not published. A direct upload of the working
   folder would still include them; if a direct upload is ever used, upload a clean export (`git archive`) instead.
 - `?debug` exposes `window.leniaApp` (needed by `tests/browser/ui-flow.html`). It reads and drives the page's own state only.
-- `_headers` is read by the host and not served (the local server mimics this).
+- `_headers` is a configuration file for the host. The local server (`--headers=prod`) answers 404 for it; that is local
+  behaviour and says nothing about a host, so check the live site (checklist step 4).
 
 ## Host
 Chosen provisionally: Cloudflare (owner decision D2). Re-checked on 3 Nov 2026: Cloudflare's Pages documentation now says
@@ -28,12 +29,32 @@ Sources: developers.cloudflare.com/pages/ (callout "Are you sure you want to use
 /pages/configuration/build-configuration/, /pages/configuration/serving-pages/, /workers/static-assets/headers/,
 /workers/static-assets/migration-guides/migrate-from-pages/ (read 3 Nov 2026).
 
+**Unmatched paths: needs live-host verification.** Nothing here has been observed on a live host. Cloudflare's Pages
+documentation says a project with no top-level `404.html` is assumed to be a single-page application, and that the root is
+served for a path that matches no asset (/pages/configuration/serving-pages/, read 5 Nov 2026). This repository has no
+`404.html`. That page does not state the status code, and the default for Workers was not confirmed. The local server answers
+a plain 404 for unknown paths, so it cannot show what a host does. Checklist step 4 records the real behaviour.
+
 ## Headers (`_headers`)
-Every path gets: the CSP from `index.html`'s meta tag plus `frame-ancestors 'self'` (a meta tag cannot set it; `'self'`, not
-`'none'`, because `ui-flow.html` drives `index.html` in a same-origin iframe), `X-Content-Type-Options: nosniff`,
-`Referrer-Policy: no-referrer`, a `Permissions-Policy` that denies sensors, camera, microphone, geolocation, payment and USB,
-and `Cache-Control: no-cache`. The modules are unhashed, so every load revalidates them (cheap 304s) and a page never mixes
-modules from two deployments, except for a load that overlaps the moment a deployment goes live.
+Which headers a response gets depends on its path, as set in `_headers`:
+
+| Response | Paths | Headers |
+|---|---|---|
+| Every response | `/*` | The four common headers: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, a `Permissions-Policy` that denies sensors, camera, microphone, geolocation, payment and USB, and `Cache-Control: no-cache` |
+| App document | `/`, `/index.html` | The common headers, plus a `Content-Security-Policy`: the policy in `index.html`'s meta tag plus `frame-ancestors 'self'` |
+| Browser check pages | `/tests/browser/*` | The common headers, plus the app policy with `frame-src 'self'` added, because `ui-flow.html` frames `index.html` |
+| Other JavaScript, CSS and static files | For example `/src/main.js`, `/styles.css`, `/docs/DEPLOYMENT.md` | The common headers only, with no CSP |
+
+A CSP controls the document that carries it, so the JavaScript and CSS outside `/tests/browser/` need none: the policy of the
+document that loads them applies. The `/tests/browser/*` rule is a wildcard, so the JavaScript and CSS in that folder also carry
+the CSP; this is harmless.
+
+`frame-ancestors` works only when delivered in an HTTP response header. Browsers ignore it in a meta CSP, so the meta tag in
+`index.html` cannot supply it, and a response without the header has no `frame-ancestors` protection even though the meta tag
+is present. The value is `'self'`, not `'none'`, because `ui-flow.html` drives `index.html` in a same-origin iframe.
+
+The modules are unhashed, so every load revalidates them (cheap 304s) and a page never mixes modules from two deployments,
+except for a load that overlaps the moment a deployment goes live.
 `tests/unit/headers.test.js` fails if the header CSP and the meta CSP drift apart, if the CSP gains inline, eval or remote
 sources, or if any shipped HTML page gains an inline script or style.
 
@@ -47,12 +68,25 @@ Then open `http://localhost:8080/Lenia/` and the three pages under `/Lenia/tests
 Bash rewrites arguments that start with `/` into Windows paths.)
 
 ## After deploying: verification checklist
-Replace `SITE` with the deployed origin.
+Replace `SITE` with the deployed origin. To rehearse the `curl` commands in steps 2 to 4 locally, run the production-header
+server above and use `http://localhost:8080/Lenia` in place of `https://SITE`; a local result in step 4 does not predict the host.
 1. HTTPS: `http://SITE/` redirects to `https://`; the certificate is valid.
-2. Headers: `curl -sI https://SITE/` and `curl -sI https://SITE/src/main.js` show all five headers above with the values in
-   `_headers`. Note the exact `cache-control` value: the host may join its default with ours.
+2. Headers, by response type. `-L` follows a redirect, which a host may send for `.html` paths; read the last response. Compare
+   the values with `_headers`, and note the exact `cache-control` value: the host may join its default with ours.
+   - App document: `curl -sIL https://SITE/` shows the four common headers and a `content-security-policy` that ends in
+     `frame-ancestors 'self'`.
+   - Check page: `curl -sIL https://SITE/tests/browser/ui-flow.html` shows the four common headers and the same policy with
+     `frame-src 'self'` added.
+   - JavaScript and CSS: `curl -sIL https://SITE/src/main.js` and `curl -sIL https://SITE/styles.css` show the four common headers
+     and no `content-security-policy`. That absence is expected.
 3. Module MIME type: `src/main.js` is served as `text/javascript` (or `application/javascript`).
-4. `curl -sI https://SITE/_headers` returns 404.
+4. Paths that are not site pages. Record each status code, content type and `content-security-policy` value in the Notes column
+   of the results table.
+   - `_headers`: `curl -sL https://SITE/_headers | grep -c X-Content-Type-Options` prints `0`, meaning the rules are not exposed.
+     The status of `curl -sIL https://SITE/_headers` is recorded, not assumed: it is 404 locally, and a host may differ.
+   - Unmatched path (see "Unmatched paths" under Host): run `curl -sIL https://SITE/no-such-page`. No result is assumed. If it
+     returns the app, check for `frame-ancestors`, which is present only if the header is sent, and raise it with the owner
+     before any public announcement.
 5. The app loads without console errors and without CSP violation reports; the HUD shows the generation advancing.
 6. WebGL error panel: in a browser with WebGL2 disabled (or hardware acceleration off where that removes WebGL2), the
    "Lenia could not start" panel appears with a readable message.
