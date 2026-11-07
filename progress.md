@@ -10,8 +10,8 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
 | 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector. Not done: more patterns, zoom and pan, seed placement |
 | 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart). No trails, no heatmap, no speed estimate |
-| 5 Quality | Partial: 90 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
-| 6 Deployment | Not started: localhost dev server only; CSP is a meta tag. The app is still static files (no build step) |
+| 5 Quality | Partial: 96 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
 ## Proposal feature status (`CGL_Project_Proposal.pdf`, section 4)
@@ -168,7 +168,8 @@ outside the repo produced it.
 - **Placement orientation:** Orbium appears vertically mirrored relative to upstream pictures (decision 13).
 - **Version labels.** `package.json` still says 0.1.0 although the code now includes Phase 2, and the separate backup is also
   called v0.1.0. A version bump or tag is the project owner's decision.
-- **Security headers.** CSP is a meta tag only. The dev server sends only `nosniff` and `no-store`. Header-level policy is Phase 6.
+- **Security headers are prepared but not live.** `_headers` (decision 27) is checked locally only (`npm start -- --headers=prod`);
+  what the host actually sends (for example how it combines its default `Cache-Control` with ours) is unverified until deployment.
 - **Bangla text was written by the assistant and not reviewed by a native speaker.** It should be proofread. Real Bengali fonts
   (Nirmala UI, Noto Sans Bengali) were not available in the test environment, so spacing and line height are unverified on
   Windows, macOS and Android.
@@ -185,6 +186,6 @@ outside the repo produced it.
 2. More verified patterns beyond O2u and O2b, and seed placement.
 3. Zoom and pan.
 4. Motion trails and activity heatmap.
-5. Deployment: production hosting, security headers.
+5. Deployment: the owner deploys and fills in the real-browser results table in `docs/DEPLOYMENT.md`.
 6. Optional: resample patterns to allow `?radius=` with Orbium. The paper reports approximate scale invariance for R > 12, but
    this would need its own verification.
