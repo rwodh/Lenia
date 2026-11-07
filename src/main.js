@@ -3,6 +3,7 @@ import { Hud } from './ui/hud.js';
 import { Controls } from './ui/controls.js';
 import { Tour } from './ui/tour.js';
 import { Observatory } from './ui/observatory.js';
+import { ViewControls } from './ui/view-controls.js';
 import { showFatal } from './ui/fatal.js';
 import { safeLocalStorage } from './ui/storage.js';
 import { parseQueryParams } from './simulation/params.js';
@@ -29,6 +30,7 @@ try {
   app.start();
   new Controls(app, document);
   new Observatory(app, document);
+  new ViewControls(app, document);
   // The guided experiment is written for Orbium; a URL that swaps it for noise gets the plain explorer.
   const tour = new Tour(app, { available: orbium, storage: safeLocalStorage(window), document });
   if (new URLSearchParams(location.search).has('tour')) tour.open();

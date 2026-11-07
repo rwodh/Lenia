@@ -3,7 +3,8 @@ import { FrameFence } from './gl/fence.js';
 import { AsyncReadback } from './gl/readback.js';
 import { computeObservables } from './simulation/observables.js';
 import { shouldSample, sampleIntervalFor, SampleHistory } from './simulation/sampler.js';
-import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES } from './config.js';
+import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES, VIEW } from './config.js';
+import * as viewMath from './render/view-math.js';
 import { Renderer } from './render/renderer.js';
 import { LeniaSimulation } from './simulation/lenia.js';
 import { normalizeParams } from './simulation/params.js';
@@ -35,6 +36,8 @@ export class App {
     this.pendingSteps = 0;
     this.stepsPerSecond = SPEEDS.find((s) => s.id === DEFAULT_SPEED_ID).stepsPerSecond;
     this.palette = PALETTES[0];
+    // World View (display only): kept across Reset, pattern switches and context restores; the tour resets it.
+    this.view = viewMath.defaultView(params.gridSize);
     this.listeners = new Set();
 
     this.sim = null;
@@ -250,6 +253,46 @@ export class App {
     this.emit();
   }
 
+  // ---- World View (display only; never changes the simulation) --------------------------------
+  // Positions are drawing-buffer pixels, origin bottom-left (convert pointer positions with viewMath.clientToBuffer).
+
+  /** Zoom by `factor` about buffer pixel (px, py); the cell under it stays under it. Bad input is ignored. */
+  zoomAt(px, py, factor) {
+    const { width, height } = this.canvas;
+    this.setView(viewMath.zoomAt(this.view, this.worldSize, width, height, px, py, factor, VIEW.maxZoom));
+  }
+
+  /** Zoom by `factor` about the centre of the canvas (buttons and keys). */
+  zoomBy(factor) {
+    this.zoomAt(this.canvas.width / 2, this.canvas.height / 2, factor);
+  }
+
+  /** Move the picture by (dpx, dpy) buffer pixels, y up. Bad input is ignored. */
+  panBy(dpx, dpy) {
+    const { width, height } = this.canvas;
+    this.setView(viewMath.panBy(this.view, this.worldSize, width, height, dpx, dpy, VIEW.maxZoom));
+  }
+
+  resetView() {
+    this.setView(viewMath.defaultView(this.worldSize));
+  }
+
+  /** The cell { x, y } under buffer pixel (px, py), or null where the background is shown. */
+  cellAt(px, py) {
+    return viewMath.cellAt(this.view, this.worldSize, this.canvas.width, this.canvas.height, px, py);
+  }
+
+  setView(view) {
+    const next = viewMath.clampView(view, this.worldSize, VIEW.maxZoom, this.view);
+    if (next.cx === this.view.cx && next.cy === this.view.cy && next.zoom === this.view.zoom) return;
+    this.view = next; // drawn by the next frame, paused or not
+    this.emit();
+  }
+
+  get worldSize() {
+    return this.sim ? this.sim.size : this.params.gridSize;
+  }
+
   snapshot() {
     return {
       paused: this.paused,
@@ -259,6 +302,7 @@ export class App {
       stepsPerSecond: this.stepsPerSecond,
       speedId: SPEEDS.find((s) => s.stepsPerSecond === this.stepsPerSecond)?.id,
       palette: this.palette,
+      view: this.view, // replaced (never mutated) on each change
       gridSize: this.sim ? this.sim.size : this.params.gridSize,
       patternLabel: this.patternLabel,
       patternId: this.patternId,
@@ -363,7 +407,7 @@ export class App {
     this.accumulatorMs = plan.accumulatorMs;
     this.pendingSteps = plan.pendingSteps;
 
-    this.renderer.draw(this.sim.stateTexture, this.sim.size);
+    this.renderer.draw(this.sim.stateTexture, this.sim.size, viewMath.viewUniforms(this.view, this.sim.size));
     this.requestSample(now); // only reached when the fence allowed this frame, i.e. the GPU is keeping up
     this.fence.mark();
 

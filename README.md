@@ -29,6 +29,10 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
   and speed are kept), Speed (0.25x to 2x of the 60 steps/s base rate), live sliders for mu, sigma and T, two colour maps
   (Ocean, Viridis; display only), status (Running/Paused, generation, pattern, world, render rate), and a
   "What are you observing?" explanation in English and Bangla. Keys: `Space` play/pause, `S` step, `R` reset.
+- **World View** (display only): zoom with the wheel (about the cursor), a two-finger pinch, the + / - buttons or keys; pan by
+  dragging, or with the arrow keys when the view has focus; `0` or *Reset view* shows the whole world again. The world wraps, so
+  panning past an edge continues seamlessly. A "Cell (x, y)" readout names the cell under the pointer (cell (0, 0) is bottom-left).
+  Reset, organism switches and a context restore keep the view; the guided tour resets it. Zoom never changes the simulation.
 - Kernel radius and grid size are shown but not adjustable (Orbium only exists at radius 13; see `DECISIONS.md` 10).
 
 ## Run it
@@ -79,14 +83,17 @@ src/simulation/             kernel/growth math, params validation, seeds, CPU re
                             patterns.js = verified upstream organism data and the two-entry registry (O2u, O2b); rle.js = strict decoder
                             startup.js = decides the starting state + parameters (Orbium O2u, or noise if the URL is incompatible); planPattern() plans a selection
                             lenia.js = GPU simulation (ping-pong R32F textures, one fragment pass per step)
-src/render/renderer.js      display pass (colour map, smooth magnification) + drawing-buffer sizing
+src/render/renderer.js      display pass (colour map, smooth magnification, World View uniforms) + drawing-buffer sizing
+src/render/view-math.js     World View mapping screen <-> cell, zoom about a point, pan, wrap, limits (pure; same maths as the shader)
 src/simulation/scheduler.js pure per-frame step planning (play / pause / single-step), unit-tested without WebGL
 src/simulation/observables.js  mass, active area, circular centroid + validity (pure; used by the app and the tests)
 src/simulation/sampler.js   when to sample (rate limit, GPU back-off, only on change) and the bounded sample history
 src/ui/                     hud.js (status), controls.js (panel wiring), tour.js (Guided Discovery), experiment.js (tour progress
-                            logic), storage.js (first-visit flag), observatory.js (Observatory card and chart), fatal.js. All text via textContent, never innerHTML
+                            logic), storage.js (first-visit flag), observatory.js (Observatory card and chart), view-controls.js (World View
+                            input and cell readout), fatal.js. All text via textContent, never innerHTML
 tests/unit/                 Node tests for the pure modules (incl. decoder, pattern provenance, placement)
-tests/fixtures/             reference decodes of O2u and O2b produced by the upstream decoder source
+tests/fixtures/             reference decodes of O2u and O2b produced by the upstream decoder source; a frozen copy of the
+                            pre-World-View display shader (gpu-parity checks the default view is byte-identical)
 tests/browser/              in-browser GPU checks (parity, organisms, readback) and the UI flow; test-pages.css (no inline styles)
 tools/serve.js              zero-dependency localhost dev server (optionally the production headers and a subpath)
 tools/headers.js            reads _headers (pure; used by serve.js and tests/unit/headers.test.js)

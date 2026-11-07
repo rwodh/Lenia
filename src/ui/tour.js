@@ -63,6 +63,7 @@ export class Tour {
     // The experiment is written for this organism, whatever was selected before. isOpen is still false here on purpose:
     // selecting emits a status event, and update() has no step to draw until goTo() below sets one.
     this.app.selectPattern(EXPERIMENT.patternId);
+    this.app.resetView(); // the tour points at the whole world; view input is blocked while a step is modal
     this.isOpen = true;
     this.goTo(0);
   }

@@ -87,5 +87,20 @@ export const OBSERVATORY = Object.freeze({
   historyLength: 240,
 });
 
+/** World View (display only; src/ui/view-math.js). Zoom 1 shows the whole world; the view never changes the simulation. */
+export const VIEW = Object.freeze({
+  /** Largest magnification over the default fit (at grid 128 on a 600 px square, one cell is then about 75 px). */
+  maxZoom: 16,
+  /** Zoom factor of one button press or + / - key. */
+  stepFactor: 1.5,
+  /** Wheel: zoom factor per wheel pixel (exp(-deltaY * k)), and the most one wheel event may change the zoom. */
+  wheelPerPixel: 0.002,
+  wheelMaxFactor: 2,
+  /** Arrow keys pan by this fraction of the visible square. */
+  keyPanFraction: 0.1,
+  /** A pointer that moves less than this (CSS px) between press and release is a click, not a drag. */
+  clickSlopPx: 4,
+});
+
 export const PALETTES = Object.freeze(['observatory', 'viridis']);
 export const TOUR_STORAGE_KEY = 'lenia.tour.v1';
