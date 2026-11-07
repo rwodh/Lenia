@@ -48,3 +48,36 @@ export function placePatternCentred(size, pattern) {
   for (let r = 0; r < height; r++) out.set(data.subarray(r * width, (r + 1) * width), (oy + r) * size + ox);
   return out;
 }
+
+/** The cell a centred pattern's anchor lands on (what placePatternAt needs to reproduce placePatternCentred exactly). */
+export function centredAnchor(size, pattern) {
+  return {
+    x: Math.floor((size - pattern.width) / 2) + Math.floor(pattern.width / 2),
+    y: Math.floor((size - pattern.height) / 2) + Math.floor(pattern.height / 2),
+  };
+}
+
+/**
+ * Place a decoded pattern unmodified on a periodic size x size grid so that its anchor cell (column floor(width/2), row
+ * floor(height/2)) lands on grid cell (x, y). Rows and columns that cross an edge wrap to the opposite side; nothing is scaled,
+ * rotated or changed, and the row orientation is the same as placePatternCentred (pattern row 0 is the lowest row).
+ * placePatternAt(size, p, centredAnchor(size, p)) equals placePatternCentred(size, p) exactly.
+ */
+export function placePatternAt(size, pattern, x, y) {
+  const { width, height, data } = pattern;
+  if (!Number.isInteger(size) || size < 1) throw new RangeError(`grid size must be a positive integer, got ${size}`);
+  if (width > size || height > size) throw new RangeError(`pattern ${width}x${height} does not fit in a ${size}x${size} grid`);
+  if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= size || y >= size) {
+    throw new RangeError(`placement cell (${x}, ${y}) is not a cell of a ${size}x${size} grid`);
+  }
+  const out = new Float32Array(size * size);
+  const ox = x - Math.floor(width / 2), oy = y - Math.floor(height / 2);
+  for (let r = 0; r < height; r++) {
+    const gy = (((oy + r) % size) + size) % size;
+    for (let c = 0; c < width; c++) {
+      const gx = (((ox + c) % size) + size) % size;
+      out[gy * size + gx] = data[r * width + c];
+    }
+  }
+  return out;
+}

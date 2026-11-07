@@ -8,9 +8,9 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 |---|---|
 | 1 Foundation | Done |
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
-| 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28). Not done: more patterns, seed placement |
+| 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28), start-cell placement of the selected organism (decision 29). Not done: more patterns, adding a second organism to a live world (designed, not implemented: `docs/design/second-organism.md`) |
 | 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart). No trails, no heatmap, no speed estimate |
-| 5 Quality | Partial: 107 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 5 Quality | Partial: 113 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
@@ -30,7 +30,7 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | Motion trails | Not implemented |
 | Density / activity heatmap | Not implemented |
 | Controlling simulation speed (proposal objective) | Implemented (0.25x to 2x) |
-| Placing seeds (proposal objective) | Not implemented |
+| Placing seeds (proposal objective) | Partial: the selected organism can start at any cell (decision 29); adding one to a running world is designed only |
 
 ## Verified facts
 Environment. Items 1 to 13 were recorded earlier in headless Chromium on a software renderer (ANGLE with SwiftShader, one
@@ -193,7 +193,7 @@ outside the repo produced it.
 
 ## Planned (not started)
 1. Performance pass on real hardware (frame rate, 2x speed, R16F fallback accuracy, the `maxTapsPerStep` cap); proofread the Bangla.
-2. More verified patterns beyond O2u and O2b, and seed placement.
+2. More verified patterns beyond O2u and O2b; adding a second organism to a live world (design: `docs/design/second-organism.md`, waiting for the owner).
 3. World View follow-ups: a follow camera (needs smoothing of the sparse, asynchronous Observatory samples), value inspection under the pointer (needs the readback path), an optional nearest-neighbour magnification.
 4. Motion trails and activity heatmap.
 5. Deployment: the owner deploys and fills in the real-browser results table in `docs/DEPLOYMENT.md`.

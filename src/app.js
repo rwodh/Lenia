@@ -30,6 +30,8 @@ export class App {
     this.initialState = initialState;
     this.patternLabel = patternLabel;
     this.patternId = patternId;
+    this.placement = null; // null = centred (as at launch), else the cell { x, y } the organism's centre starts on
+    this.placing = false; // "Place" mode armed: the next click on the world sets the placement
     this.onFatal = onFatal;
 
     this.paused = false;
@@ -216,16 +218,44 @@ export class App {
    * simulation restarts from it through the same path as reset(). Play/pause and speed are kept. Selecting the pattern
    * already shown restarts it. Throws if there is no library here (noise start) or the id is unknown.
    * One state upload: the kernel texture and the ping-pong targets are reused, since every pattern has the same radius.
+   * The chosen start cell (placeAt) is kept, unless `centred` is set (the tour uses that, so it always starts centred).
    */
-  selectPattern(id) {
+  selectPattern(id, { centred = false } = {}) {
     if (this.patternId === null) throw new RangeError('this world has no pattern library (it does not use the patterns\' kernel radius)');
-    const plan = planPattern(id, this.baseParams);
+    const placement = centred ? null : this.placement;
+    const plan = planPattern(id, this.baseParams, placement);
     this.baseParams = Object.freeze({ ...plan.params });
     this.initialState = plan.initialState; // also what a context restore re-uploads
+    this.placement = placement;
     this.patternLabel = plan.label;
     this.patternId = plan.pattern.id;
     this.hud.setPattern(plan.label);
+    this.placing = false;
     this.reset();
+  }
+
+  // ---- Placement: where the selected organism starts (Reset restores it there). No change to the simulation rules. ----
+
+  /** Arm or disarm "Place" mode: while armed, a click on the world chooses the start cell (see ViewControls onClick). */
+  armPlacement(on) {
+    this.placing = !!on && this.patternId !== null;
+    this.emit();
+  }
+
+  /** Start the selected organism with its centre on cell { x, y } (integers in [0, grid)); restarts like Reset. */
+  placeAt(cell) {
+    if (this.patternId === null) throw new RangeError('this world has no organism to place');
+    const placement = { x: cell?.x, y: cell?.y };
+    const plan = planPattern(this.patternId, this.baseParams, placement); // throws RangeError for a cell outside the grid
+    this.initialState = plan.initialState;
+    this.placement = Object.freeze(placement);
+    this.placing = false;
+    this.reset();
+  }
+
+  /** Back to the centred start (as at launch). */
+  clearPlacement() {
+    if (this.patternId !== null) this.selectPattern(this.patternId, { centred: true });
   }
 
   /** Set a live parameter (mu, sigma, timeSteps). Validated by normalizeParams, then limited to the slider range. Returns the value in effect. */
@@ -306,6 +336,8 @@ export class App {
       gridSize: this.sim ? this.sim.size : this.params.gridSize,
       patternLabel: this.patternLabel,
       patternId: this.patternId,
+      placement: this.placement,
+      placing: this.placing,
       observation: this.observation, // replaced (never mutated) on each change
       historyVersion: this.history.version,
     };
