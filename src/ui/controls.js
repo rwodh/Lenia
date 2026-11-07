@@ -1,7 +1,8 @@
 import { SPEEDS, UI_RANGES, PALETTES } from '../config.js';
 import { PATTERN_LIBRARY, getPattern } from '../simulation/patterns.js';
 
-const PALETTE_LABELS = { observatory: 'Observatory', viridis: 'Viridis' };
+// The id 'observatory' is internal (shader uniform, tests); its label is 'Ocean' so it is not confused with the Observatory card.
+const PALETTE_LABELS = { observatory: 'Ocean', viridis: 'Viridis' };
 
 function segmented(container, options, onPick) {
   const buttons = new Map();

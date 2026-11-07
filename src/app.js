@@ -49,6 +49,7 @@ export class App {
     this.gpuBound = false;
     this.cleanFrames = 0;
     this.fence = null;
+    this.gpuLost = false; // true between a context loss and the next initGpu()
 
     // Observatory (read-only): the state is copied to the CPU asynchronously, at most every 250 ms (500 ms at grid 512) and
     // not while the GPU is behind (see requestSample), and measured there.
@@ -66,6 +67,7 @@ export class App {
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault(); // required, otherwise the browser will not try to restore the context
       this.stop();
+      this.gpuLost = true; // initGpu() must not delete the dead objects (see there)
       this.readback = null; // its buffer and fence died with the context; dropped, not disposed
       this.clearObservations();
       this.setObservatoryUnavailable('graphics context lost');
@@ -86,9 +88,14 @@ export class App {
 
   /** (Re)create every GPU resource. Safe to call again after a context restore. */
   initGpu() {
-    this.sim?.dispose(); // after a context loss these are harmless no-ops on dead handles
-    this.renderer?.dispose();
-    this.fence?.dispose();
+    // After a context loss the old objects died with the context and are dropped, not disposed: deleting them raises
+    // INVALID_OPERATION, and that leftover error made the format probe reject float32 (progress.md, fact 22).
+    if (!this.gpuLost) {
+      this.sim?.dispose();
+      this.renderer?.dispose();
+      this.fence?.dispose();
+    }
+    this.gpuLost = false;
     const { gl, caps } = createGLContext(this.canvas);
     this.caps = caps;
     this.fence = new FrameFence(gl, LOOP.maxFramesInFlight);

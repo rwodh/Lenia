@@ -118,6 +118,33 @@ try {
   check('No duplicate animation loops after repeated interaction', P.probe.max <= 1, `max pending rAF callbacks = ${P.probe.max}`);
   check('Controls leave no WebGL error behind', P.app.sim.gl.getError() === P.app.sim.gl.NO_ERROR);
 
+  // ---------- regression: a context restore keeps the state format (it used to drop float32 to float16) ----------
+  // Cause (progress.md): initGpu() deleted the lost context's objects, each delete raised INVALID_OPERATION, and the
+  // format probe then rejected float32 because of that leftover error.
+  P = await load('');
+  {
+    const A = P.app;
+    const ext = A.sim.gl.getExtension('WEBGL_lose_context');
+    const first = A.caps.stateFormat.name;
+    if (!ext || first !== 'float32') {
+      log(`info  restore-format regression not applicable: ${ext ? `state format at start is ${first}` : 'WEBGL_lose_context unavailable'}`, 'info');
+    } else {
+      A.pause(); // paused across the restore, so the re-seeded state is still generation 0
+      const old = A.sim;
+      ext.loseContext();
+      await sleep(300);
+      ext.restoreContext();
+      await until(() => A.sim !== old && A.running, 'context restore', 30000);
+      const fmt = A.caps.stateFormat.name, err = diffMax(A.sim.readState(), seedOf('O2u'));
+      check('context restore keeps the state format (float32 before and after)', fmt === first, `before=${first} after=${fmt}`);
+      check('context restore re-seeds the selected organism exactly (error 0, generation 0)', err === 0 && A.sim.generation === 0, `maxAbsError=${err}`);
+      A.play();
+      await until(() => A.observation.status === 'ok', 'Observatory sample after restore', 30000);
+      check('context restore: the Observatory resumes; no WebGL error', A.observation.latest.mass > 60 && A.sim.gl.getError() === A.sim.gl.NO_ERROR,
+        `mass=${A.observation.latest.mass.toFixed(2)}`);
+    }
+  }
+
   // ---------- organism library: selection, Reset, repeated switching, context restore ----------
   P = await load('');
   {
@@ -183,8 +210,8 @@ try {
       await sleep(300);
       ext.restoreContext();
       await until(() => A.sim !== old && A.running, 'context restore', 30000);
-      // The restored context may pick a different state format than the first one (observed: float32 at start, float16 after
-      // a restore on this machine), so exactness is only demanded for float32; for float16 the seed is quantised (<= 5e-4).
+      // The restore keeps the state format (asserted by the regression block above); a browser that starts in float16 quantises
+      // the seed (<= 5e-4), so exactness is only demanded for float32.
       const restored = A.sim.readState(), fmt = A.caps.stateFormat.name, tolSeed = fmt === 'float32' ? 0 : 1e-3;
       log(`info  state format after the restore: ${fmt} (it was ${P.firstFormat} before the context loss)`, 'info');
       check('context loss and restore after selecting O2b: re-seeded with O2b (not Orbium), O2b parameters kept',
