@@ -33,6 +33,11 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
   dragging, or with the arrow keys when the view has focus; `0` or *Reset view* shows the whole world again. The world wraps, so
   panning past an edge continues seamlessly. A "Cell (x, y)" readout names the cell under the pointer (cell (0, 0) is bottom-left).
   Reset, organism switches and a context restore keep the view; the guided tour resets it. Zoom never changes the simulation.
+- **Overlay** (display only, off by default): *Trails* shows each cell's highest recent value; *Activity* shows how much each
+  cell has been changing, scaled so 1 is the largest possible sustained change (1/T per step). Both fade by a chosen factor
+  per simulation step (0.80 to 0.999; the half-life is shown) and are drawn instead of the state with the same colour map. They
+  are computed from the state on the GPU, one extra pass per step, and never write it. Reset and organism switches clear
+  them; the guided tour turns them off.
 - **Placement**: *Place*, then click a cell in the view: the selected organism starts with its centre on that cell (copied
   unchanged, wrapping across the edges). Reset restores it there, switching organism keeps the cell, *Centre* returns to the
   launch position, and Escape cancels *Place*. The guided tour always starts and ends with the centred Orbium.
@@ -81,7 +86,8 @@ src/app.js                  owns GPU resources + the single animation loop; play
 src/config.js               limits and defaults
 src/gl/                     context + capability probe, program compile/link, textures/FBOs, frame fence,
                             readback.js = asynchronous state copy (pixel-pack buffer + fence; never waits on the GPU)
-src/shaders/                GLSL ES 3.00 as JS string modules (no fetch, no bundler)
+src/shaders/                GLSL ES 3.00 as JS string modules (no fetch, no bundler); overlay-accumulate.frag.js = trails/activity
+src/gl/overlay.js           trails/activity accumulator: its own ping-pong textures, one pass per step, read-only towards the state
 src/simulation/             kernel/growth math, params validation, seeds and placement (seed.js), CPU reference  (pure JS, Node-testable)
                             patterns.js = verified upstream organism data and the two-entry registry (O2u, O2b); rle.js = strict decoder
                             startup.js = decides the starting state + parameters (Orbium O2u, or noise if the URL is incompatible); planPattern() plans a selection

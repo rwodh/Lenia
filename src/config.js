@@ -102,5 +102,14 @@ export const VIEW = Object.freeze({
   clickSlopPx: 4,
 });
 
+/**
+ * Visualization aids (display only; src/gl/overlay.js). Off is the default and allocates nothing. The decay is applied once
+ * per simulation step; its half-life in steps is ln(0.5) / ln(decay) (0.95: about 14 steps; 0.999: about 690 steps).
+ */
+export const VISUAL = Object.freeze({
+  modes: Object.freeze(['off', 'trails', 'activity']),
+  decay: Object.freeze({ min: 0.8, max: 0.999, step: 0.001, default: 0.95 }),
+});
+
 export const PALETTES = Object.freeze(['observatory', 'viridis']);
 export const TOUR_STORAGE_KEY = 'lenia.tour.v1';

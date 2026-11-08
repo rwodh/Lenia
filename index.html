@@ -154,6 +154,18 @@
             <span class="row-label" id="l-colour">Colour</span>
             <div class="seg" role="group" aria-labelledby="l-colour" id="seg-colour"></div>
           </div>
+          <div class="row">
+            <span class="row-label" id="l-aid">Overlay</span>
+            <div class="seg" role="group" aria-labelledby="l-aid" id="seg-aid"></div>
+          </div>
+          <div class="param aid" data-aid="panel" hidden>
+            <div class="param-head">
+              <label for="p-decay">Fade per step</label>
+              <output for="p-decay" data-out="decay"></output>
+            </div>
+            <input type="range" id="p-decay" data-input="decay">
+            <p class="hint" data-aid="explain" aria-live="polite"></p>
+          </div>
           <p class="keys"><kbd>Space</kbd> play / pause &middot; <kbd>S</kbd> step (paused) &middot; <kbd>R</kbd> reset</p>
           <p class="keys" id="view-keys">View: drag or pinch, wheel to zoom &middot; <kbd>+</kbd> <kbd>&minus;</kbd> zoom &middot; <kbd>0</kbd> whole world &middot; arrow keys pan (view focused). The view never changes the simulation.</p>
         </section>

@@ -9,8 +9,8 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | 1 Foundation | Done |
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
 | 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28), start-cell placement of the selected organism (decision 29). Not done: more patterns, adding a second organism to a live world (designed, not implemented: `docs/design/second-organism.md`) |
-| 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart). No trails, no heatmap, no speed estimate |
-| 5 Quality | Partial: 113 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart), and two display-only aids: trails and an activity map (decision 30). No speed estimate |
+| 5 Quality | Partial: 114 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
@@ -25,10 +25,10 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | Pause, step, reset, restart | Implemented (Reset = initial state and parameters; restart = Reset while playing) |
 | Zoom and pan | Implemented (display only): wheel, drag, pinch, buttons, keys; cell readout under the pointer (decision 28) |
 | Information display | Implemented: Running/Paused, generation, pattern, world and radius, render rate, float format, "GPU-limited", and Observatory measurements |
-| Dynamic colour visualization | Partial: two fixed colour maps of cell state; no activity mapping |
+| Dynamic colour visualization | Two colour maps of cell state, plus the activity aid (decision 30) |
 | Live parameter experimentation | Implemented for mu, sigma, T, plus the guided sigma experiment |
-| Motion trails | Not implemented |
-| Density / activity heatmap | Not implemented |
+| Motion trails | Implemented (display only; decaying per-step maximum, decision 30) |
+| Density / activity heatmap | Implemented as an activity map (decaying per-step sum of |change|, decision 30); no density map |
 | Controlling simulation speed (proposal objective) | Implemented (0.25x to 2x) |
 | Placing seeds (proposal objective) | Partial: the selected organism can start at any cell (decision 29); adding one to a running world is designed only |
 
@@ -195,7 +195,7 @@ outside the repo produced it.
 1. Performance pass on real hardware (frame rate, 2x speed, R16F fallback accuracy, the `maxTapsPerStep` cap); proofread the Bangla.
 2. More verified patterns beyond O2u and O2b; adding a second organism to a live world (design: `docs/design/second-organism.md`, waiting for the owner).
 3. World View follow-ups: a follow camera (needs smoothing of the sparse, asynchronous Observatory samples), value inspection under the pointer (needs the readback path), an optional nearest-neighbour magnification.
-4. Motion trails and activity heatmap.
+4. Visual aids follow-ups: a separate colour map for activity (it now shares the state's), and a measured frame-rate effect in an ordinary browser.
 5. Deployment: the owner deploys and fills in the real-browser results table in `docs/DEPLOYMENT.md`.
 6. Optional: resample patterns to allow `?radius=` with Orbium. The paper reports approximate scale invariance for R > 12, but
    this would need its own verification.

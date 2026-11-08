@@ -12,7 +12,7 @@ export class Renderer {
     this.canvas = canvas;
     this.caps = caps;
     this.program = createProgram(gl, 'display', fullscreenVert, displayFrag, [
-      'uState', 'uGridSize', 'uCanvasSize', 'uPalette', 'uZoom', 'uOffset',
+      'uState', 'uGridSize', 'uCanvasSize', 'uPalette', 'uZoom', 'uOffset', 'uOverlay', 'uOverlayMode', 'uOverlayScale',
     ]);
     this.vao = gl.createVertexArray();
     this.palette = 0; // viridis; the app selects its own default through setPalette()
@@ -40,8 +40,11 @@ export class Renderer {
     return true;
   }
 
-  /** `view` is { offsetX, offsetY, zoom } from viewUniforms() (src/ui/view-math.js); omitted = the default fit. */
-  draw(stateTexture, gridSize, view = DEFAULT_VIEW) {
+  /**
+   * `view` is { offsetX, offsetY, zoom } from viewUniforms() (src/render/view-math.js); omitted = the default fit.
+   * `overlay` is null (draw the state) or { texture, mode, scale } (src/gl/overlay.js): draw that aid instead. Display only.
+   */
+  draw(stateTexture, gridSize, view = DEFAULT_VIEW, overlay = null) {
     const { gl, program, canvas } = this;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -55,6 +58,12 @@ export class Renderer {
     gl.uniform1i(program.uniforms.uPalette, this.palette);
     gl.uniform1f(program.uniforms.uZoom, view.zoom);
     gl.uniform2f(program.uniforms.uOffset, view.offsetX, view.offsetY);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, overlay ? overlay.texture : null);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.uniform1i(program.uniforms.uOverlay, 1);
+    gl.uniform1i(program.uniforms.uOverlayMode, overlay ? overlay.mode : 0);
+    gl.uniform1f(program.uniforms.uOverlayScale, overlay ? overlay.scale : 1);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 

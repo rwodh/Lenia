@@ -1,9 +1,10 @@
 import { createGLContext } from './gl/context.js';
 import { FrameFence } from './gl/fence.js';
 import { AsyncReadback } from './gl/readback.js';
+import { OverlayAccumulator, OVERLAY_MODE } from './gl/overlay.js';
 import { computeObservables } from './simulation/observables.js';
 import { shouldSample, sampleIntervalFor, SampleHistory } from './simulation/sampler.js';
-import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES, VIEW } from './config.js';
+import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES, VIEW, VISUAL } from './config.js';
 import * as viewMath from './render/view-math.js';
 import { Renderer } from './render/renderer.js';
 import { LeniaSimulation } from './simulation/lenia.js';
@@ -40,6 +41,10 @@ export class App {
     this.palette = PALETTES[0];
     // World View (display only): kept across Reset, pattern switches and context restores; the tour resets it.
     this.view = viewMath.defaultView(params.gridSize);
+    // Visualization aid (display only): 'off' allocates nothing and adds no pass; otherwise one pass per simulation step.
+    this.visualMode = 'off';
+    this.decay = VISUAL.decay.default;
+    this.overlay = null;
     this.listeners = new Set();
 
     this.sim = null;
@@ -74,6 +79,7 @@ export class App {
       this.stop();
       this.gpuLost = true; // initGpu() must not delete the dead objects (see there)
       this.readback = null; // its buffer and fence died with the context; dropped, not disposed
+      this.overlay = null; // likewise; recreated by initGpu() if a mode is on
       this.clearObservations();
       this.setObservatoryUnavailable('graphics context lost');
       this.hud.setNote('Graphics context lost. Waiting for the browser to restore it...');
@@ -99,7 +105,9 @@ export class App {
       this.sim?.dispose();
       this.renderer?.dispose();
       this.fence?.dispose();
+      this.overlay?.dispose();
     }
+    this.overlay = null;
     this.gpuLost = false;
     const { gl, caps } = createGLContext(this.canvas);
     this.caps = caps;
@@ -108,6 +116,7 @@ export class App {
     this.renderer.setPalette(this.palette);
     this.sim = new LeniaSimulation(gl, caps, this.params);
     this.sim.reset(this.initialState);
+    if (this.visualMode !== 'off') this.overlay = new OverlayAccumulator(gl, caps, this.sim.size);
     this.readback = null;
     this.clearObservations();
     try {
@@ -207,6 +216,7 @@ export class App {
   reset() {
     Object.assign(this.params, this.baseParams);
     this.sim?.reset(this.initialState);
+    this.overlay?.clear(); // its history described the state that was just replaced
     this.accumulatorMs = 0;
     this.pendingSteps = 0;
     this.clearObservations();
@@ -276,6 +286,36 @@ export class App {
     this.emit();
   }
 
+  /** 'off', 'trails' or 'activity'. Display only: the simulation state is never written. Switching clears the aid. */
+  setVisualMode(mode) {
+    if (!VISUAL.modes.includes(mode)) throw new RangeError(`unknown visual mode "${mode}"`);
+    this.visualMode = mode;
+    if (mode === 'off') {
+      this.overlay?.dispose();
+      this.overlay = null;
+    } else if (this.sim) {
+      try {
+        if (!this.overlay) this.overlay = new OverlayAccumulator(this.sim.gl, this.caps, this.sim.size);
+        else this.overlay.clear();
+      } catch (err) { // e.g. GPU memory: the simulation does not depend on the aid, so fall back to off
+        this.visualMode = 'off';
+        this.overlay = null;
+        this.hud.setNote(`Visual aid unavailable: ${err.message}`);
+      }
+    }
+    this.emit();
+  }
+
+  /** Decay per simulation step, limited to VISUAL.decay; non-finite input is rejected. Returns the value in effect. */
+  setDecay(value) {
+    const v = Number(value);
+    if (!Number.isFinite(v)) throw new RangeError('decay must be a finite number');
+    const { min, max } = VISUAL.decay;
+    this.decay = Number(Math.min(max, Math.max(min, v)).toFixed(3));
+    this.emit();
+    return this.decay;
+  }
+
   setPalette(name) {
     if (!PALETTES.includes(name)) throw new RangeError(`unknown palette "${name}"`);
     this.palette = name;
@@ -333,6 +373,8 @@ export class App {
       speedId: SPEEDS.find((s) => s.stepsPerSecond === this.stepsPerSecond)?.id,
       palette: this.palette,
       view: this.view, // replaced (never mutated) on each change
+      visualMode: this.visualMode,
+      decay: this.decay,
       gridSize: this.sim ? this.sim.size : this.params.gridSize,
       patternLabel: this.patternLabel,
       patternId: this.patternId,
@@ -435,11 +477,17 @@ export class App {
       cap: this.gpuBound ? 1 : LOOP.maxStepsPerFrame,
       pendingSteps: this.pendingSteps,
     });
-    for (let i = 0; i < plan.steps; i++) this.sim.step();
+    const ov = this.overlay, mode = OVERLAY_MODE[this.visualMode];
+    for (let i = 0; i < plan.steps; i++) {
+      this.sim.step();
+      ov?.accumulate(this.sim.stateTexture, this.sim.previousTexture, mode, this.decay); // per step, read-only towards the state
+    }
     this.accumulatorMs = plan.accumulatorMs;
     this.pendingSteps = plan.pendingSteps;
 
-    this.renderer.draw(this.sim.stateTexture, this.sim.size, viewMath.viewUniforms(this.view, this.sim.size));
+    const scale = mode === OVERLAY_MODE.activity ? (1 - this.decay) * this.params.timeSteps : 1; // activity: (1 - decay) / dt
+    this.renderer.draw(this.sim.stateTexture, this.sim.size, viewMath.viewUniforms(this.view, this.sim.size),
+      ov ? { texture: ov.texture, mode, scale } : null);
     this.requestSample(now); // only reached when the fence allowed this frame, i.e. the GPU is keeping up
     this.fence.mark();
 

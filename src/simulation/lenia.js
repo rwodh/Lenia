@@ -36,6 +36,11 @@ export class LeniaSimulation {
     return this.targets[this.read].tex;
   }
 
+  /** The other ping-pong texture: right after step(), the state before that step (read-only use: the trails/activity overlay). */
+  get previousTexture() {
+    return this.targets[1 - this.read].tex;
+  }
+
   /** Framebuffer holding the current state (read-only use: the Observatory's asynchronous readback). */
   get stateFramebuffer() {
     return this.targets[this.read].fbo;

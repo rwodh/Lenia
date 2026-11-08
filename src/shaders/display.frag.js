@@ -15,6 +15,12 @@ uniform vec2 uCanvasSize;
 uniform int uPalette;
 uniform float uZoom;
 uniform vec2 uOffset;
+// Visualization aid (src/gl/overlay.js): 0 = off (the state itself, as before), 1 = trails, 2 = activity. When on, the overlay
+// texture is drawn instead of the state, multiplied by uOverlayScale (1 for trails; (1 - decay) / dt for activity, which maps
+// the largest possible sustained change to 1).
+uniform sampler2D uOverlay;
+uniform int uOverlayMode;
+uniform float uOverlayScale;
 
 out vec4 outColor;
 
@@ -57,6 +63,20 @@ float sampleState(vec2 pos) {
              mix(cell(i0 + ivec2(0, 1)), cell(i0 + ivec2(1, 1)), f.x), f.y);
 }
 
+float overlayCell(ivec2 c) {
+  ivec2 n = ivec2(uGridSize);
+  return texelFetch(uOverlay, ((c % n) + n) % n, 0).r;
+}
+
+// Same bilinear, periodic sampling as sampleState, from the overlay texture.
+float sampleOverlay(vec2 pos) {
+  vec2 p = pos - 0.5;
+  ivec2 i0 = ivec2(floor(p));
+  vec2 f = fract(p);
+  return mix(mix(overlayCell(i0), overlayCell(i0 + ivec2(1, 0)), f.x),
+             mix(overlayCell(i0 + ivec2(0, 1)), overlayCell(i0 + ivec2(1, 1)), f.x), f.y);
+}
+
 void main() {
   float side = min(uCanvasSize.x, uCanvasSize.y) * uZoom;
   vec2 uv = (gl_FragCoord.xy - 0.5 * uCanvasSize) / side + 0.5;
@@ -64,7 +84,8 @@ void main() {
     outColor = vec4(BACKGROUND, 1.0);
     return;
   }
-  float v = clamp(sampleState(uv * float(uGridSize) + uOffset), 0.0, 1.0);
+  vec2 pos = uv * float(uGridSize) + uOffset;
+  float v = uOverlayMode == 0 ? clamp(sampleState(pos), 0.0, 1.0) : clamp(sampleOverlay(pos) * uOverlayScale, 0.0, 1.0);
   outColor = vec4(clamp(uPalette == 1 ? observatory(v) : viridis(v), 0.0, 1.0), 1.0);
 }
 `;

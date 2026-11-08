@@ -64,6 +64,7 @@ export class Tour {
     // selecting emits a status event, and update() has no step to draw until goTo() below sets one.
     this.app.selectPattern(EXPERIMENT.patternId, { centred: true }); // the experiment was measured on the centred seed
     this.app.resetView(); // the tour points at the whole world; view input is blocked while a step is modal
+    this.app.setVisualMode('off'); // the tour describes the state itself, not a derived aid
     this.isOpen = true;
     this.goTo(0);
   }
