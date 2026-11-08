@@ -29,8 +29,13 @@ export const LOOP = Object.freeze({
   stepsPerSecond: 60,
   /** Cap on catch-up steps per frame; excess time is dropped instead of spiralling. */
   maxStepsPerFrame: 4,
-  /** Frames of GPU work allowed in flight; beyond this the loop skips submitting. */
-  maxFramesInFlight: 2,
+  /**
+   * Frames of GPU work allowed in flight; beyond this the loop skips submitting. 3, not 2 (owner decision, 9 Nov 2026): on a
+   * 144 Hz display a frame fence signals 1 to 2 frames after submission even when the GPU is nearly idle, so with 2 the loop
+   * held back up to 64 % of frames and reported itself GPU-limited while the GPU worked about 1 ms of each 7 ms frame
+   * (DECISIONS.md 7, docs/reports/2026-11-08-m1.md). Still a bound: at 60 Hz, 3 frames is 50 ms of queued work.
+   */
+  maxFramesInFlight: 3,
   /** Consecutive un-throttled frames before the loop stops considering itself GPU-bound. */
   gpuBoundRecoveryFrames: 60,
   hudIntervalMs: 250,

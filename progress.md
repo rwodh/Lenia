@@ -171,12 +171,14 @@ outside the repo produced it.
     passed twice (it failed twice before). Unknown paths get `404.html` (locally; the host is unverified).
 
 ## Unresolved or unverified
-- **The GPU-limited flag is mostly a false positive on a 144 Hz display** (Reported, scratchpad probe, 8 Nov 2026, the AMD
+- **The GPU-limited flag is mostly a false positive on a 144 Hz display** (Reported, scratchpad probe, 8 and 9 Nov 2026, the AMD
   renderer above, Chrome 156 normal window). At grids 64 and 128 the GPU spends about 1 ms per frame (timer query, p50; p90 1.7 to
-  3.3 ms) of a 7 ms frame interval, but a frame fence takes 1 to 2 frames to signal (presentation latency, not load). With
-  `LOOP.maxFramesInFlight` = 2, frames were held back 40 to 64 % of the time, the flag was on 23 to 95 % (73 % at grid 64), the
-  simulation ran at 52 to 62 steps/s instead of 60, and the Observatory does not sample while the flag is on. A change would
-  touch the in-flight cap the frame fence enforces, so it waits for an owner decision (proposal in the M1 report).
+  3.4 ms) of a 7 ms frame interval, but a frame fence signals 1 to 3 frames after submission (presentation latency, not load).
+  With `LOOP.maxFramesInFlight` = 2 frames were held back 40 to 64 % of the time and the simulation ran at 52 to 62 steps/s.
+  Raised to 3 on 9 Nov 2026 (owner decision): held back 12 to 33 %, 57 to 62 steps/s at grid 128, but the fences then signal a
+  frame later and the **flag is still on 23 to 63 %** (50 % at grid 64), so the Observatory still rarely samples. The flag counts
+  any single held-back frame; a rule that needs several held-back frames in a row (app.js only) is proposed and waits for the
+  owner. At grid 256 the flag is on throughout and the GPU's p90 frame time (8 ms) exceeds the 7 ms interval: real load.
 - **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
   or performance figure was taken (the built-in browser pane delivered animation frames at roughly 5 Hz while the pages ran, so
   such numbers would not mean anything), and the `maxTapsPerStep` cap (200M, an estimate) and 2x speed remain untested. A 512 grid
