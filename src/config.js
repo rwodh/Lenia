@@ -120,5 +120,15 @@ export const VISUAL = Object.freeze({
  *  Observatory markers, the label and test time. */
 export const ADDITIONS = Object.freeze({ max: 8 });
 
+/**
+ * Periodic surround (display only; decision 35): outside the main square (one world period) the view shows the wrapped
+ * continuation of the world at `dim` brightness, with a faint 1 px line at every period boundary (`line` = how far the line
+ * colour is mixed towards white). Off: the old background bars. The main square itself is drawn exactly as without it.
+ */
+export const SURROUND = Object.freeze({ default: true, dim: 0.45, line: 0.25 });
+
+/** Floating panels: translucent "glass" or opaque "solid" (also used when blur is unsupported or reduced transparency is asked). */
+export const PANEL_STYLES = Object.freeze(['glass', 'solid']);
+
 export const PALETTES = Object.freeze(['observatory', 'viridis']);
 export const TOUR_STORAGE_KEY = 'lenia.tour.v1';

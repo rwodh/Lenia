@@ -18,6 +18,7 @@ import { decodeRle } from '../../src/simulation/rle.js';
 import { ORBIUM_O2U } from '../../src/simulation/patterns.js';
 import fullscreenVert from '../../src/shaders/fullscreen.vert.js';
 import preViewFrag from '../fixtures/display-pre-view.frag.js';
+import { SURROUND } from '../../src/config.js';
 
 const out = document.getElementById('result');
 const lines = [];
@@ -178,6 +179,73 @@ try {
     for (let i = 0; i < all.length; i += 4) if (near([all[i], all[i + 1], all[i + 2]], [11, 13, 18], 2)) bgPixels++;
     check('World View: a window straddling the world edges wraps seamlessly (no background pixel at zoom 8)', bgPixels === 0, `background pixels=${bgPixels}`);
     check('World View: no pending GL error', gl.getError() === gl.NO_ERROR);
+
+    // 3c. Periodic surround (decision 35). (1) With it on, every pixel the pre-view shader drew inside the main square is
+    //     byte-identical (only the old background pixels change). (2) A surround pixel is the dimmed colour of the same cell
+    //     one period away, inside the square: the shader multiplies the unrounded colour by SURROUND.dim, so within 1 LSB.
+    //     (3) A faint boundary line appears where a period edge crosses pixel centres. With it off, the old bars return: that
+    //     is the default-view check above (Renderer.draw without a surround draws the background, as before).
+    vsim.reset(randomDiscSeed(n, { radiusFraction: 0.45, seed: 7 }));
+    const BG = [11, 13, 18];
+    let insideCompared = 0, insideDiffering = 0, outsideChanged = 0;
+    for (const [w, h] of [[128, 64], [97, 131], [200, 200], [333, 120]]) {
+      canvas.width = w; canvas.height = h;
+      for (const palette of [0, 1]) {
+        vren.setPalette(palette ? 'observatory' : 'viridis');
+        vren.draw(vsim.stateTexture, n, viewUniforms(defaultView(n), n), null, SURROUND);
+        const now = snap();
+        drawOld(palette);
+        const before = snap();
+        for (let i = 0; i < now.length; i += 4) {
+          const wasBg = near([before[i], before[i + 1], before[i + 2]], BG, 0);
+          if (wasBg) { if (now[i] !== before[i] || now[i + 1] !== before[i + 1] || now[i + 2] !== before[i + 2]) outsideChanged++; continue; }
+          insideCompared++;
+          if (now[i] !== before[i] || now[i + 1] !== before[i + 1] || now[i + 2] !== before[i + 2]) insideDiffering++;
+        }
+      }
+    }
+    check('Surround on: the main square is byte-identical to the pre-view shader (4 canvas sizes, both palettes)',
+      insideDiffering === 0 && insideCompared > 0 && outsideChanged > 0,
+      `inside pixels compared=${insideCompared}, differing=${insideDiffering}; outside pixels now drawn=${outsideChanged}`);
+
+    // (2) 200 x 100: the square is x 50..149 (side 100, a whole number), so the period edges fall between pixel columns; the
+    //     columns right next to an edge (49, 150) are exactly 0.5 px from it, where drawing the 1 px line depends on float
+    //     rounding, so the samples stay at least one column away. The same holds for the top and bottom rows (the horizontal
+    //     period edges are at y = 0 and 100), so rows 1..98 are used. Pixel x outside matches pixel x +/- 100 inside.
+    canvas.width = 200; canvas.height = 100;
+    let worstDim = 0, dimCompared = 0;
+    for (const palette of [0, 1]) {
+      vren.setPalette(palette ? 'observatory' : 'viridis');
+      vren.draw(vsim.stateTexture, n, viewUniforms(defaultView(n), n), null, SURROUND);
+      const img = snap();
+      for (let y = 1; y < 99; y++) {
+        for (const x of [0, 7, 25, 48, 151, 170, 199]) {
+          const xi = x < 50 ? x + 100 : x - 100, o = (y * 200 + x) * 4, q = (y * 200 + xi) * 4;
+          for (let k = 0; k < 3; k++) worstDim = Math.max(worstDim, Math.abs(img[o + k] - Math.round(img[q + k] * SURROUND.dim)));
+          dimCompared++;
+        }
+      }
+    }
+    check('Surround on: a surround pixel equals the dimmed colour of the wrapped cell (within 1 LSB)', worstDim <= 1 && dimCompared > 0,
+      `pixels compared=${dimCompared}, max difference=${worstDim} (dim ${SURROUND.dim})`);
+
+    // (3) 201 x 100: the square starts at x = 50.5, so the right edge (uv = 1) runs through the centres of column 150, which is
+    //     outside the square and gets the line colour: mix(dimmed, white, SURROUND.line).
+    canvas.width = 201; canvas.height = 100;
+    vren.setPalette('viridis');
+    vren.draw(vsim.stateTexture, n, viewUniforms(defaultView(n), n), null, SURROUND);
+    const lineImg = snap();
+    let lineWorst = 0;
+    for (let y = 0; y < 100; y++) {
+      const o = (y * 201 + 150) * 4, inner = (y * 201 + 50) * 4; // column 50 is the same world column, inside the square
+      for (let k = 0; k < 3; k++) {
+        const expected = Math.round(255 * ((lineImg[inner + k] / 255) * SURROUND.dim * (1 - SURROUND.line) + SURROUND.line));
+        lineWorst = Math.max(lineWorst, Math.abs(lineImg[o + k] - expected));
+      }
+    }
+    check('Surround on: the period boundary is drawn as a faint line (mixed towards white by SURROUND.line, within 2 LSB)',
+      lineWorst <= 2, `max difference from the expected line colour=${lineWorst}`);
+    check('Surround: no pending GL error', gl.getError() === gl.NO_ERROR);
     gl.deleteVertexArray(vao); gl.deleteProgram(old.program); vren.dispose(); vsim.dispose();
     canvas.width = 128; canvas.height = 64;
   }

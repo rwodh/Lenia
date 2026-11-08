@@ -14,8 +14,9 @@ const sigmaText = (v) => v.toFixed(UI_RANGES.sigma.digits);
  * Leaving the tour (finish or skip) selects Orbium unicaudatus, resets it and its parameters, and plays, so the Explorer starts clean.
  */
 export class Tour {
-  constructor(app, { available, storage, document: doc = document }) {
+  constructor(app, { available, storage, document: doc = document, panels = null }) {
     this.app = app;
+    this.panels = panels; // opens the panel that holds the control a step talks about
     this.available = available;
     this.storage = storage;
     this.doc = doc;
@@ -76,6 +77,7 @@ export class Tour {
     this.root.hidden = true;
     this.setSpot(null);
     this.setModal(false);
+    this.panels?.closeAll(); // the explorer starts with every panel closed, as on a first visit
     markTourCompleted(this.storage, TOUR_STORAGE_KEY);
     this.app.selectPattern(EXPERIMENT.patternId, { centred: true }); // restarts it like reset(), centred, the tour's organism selected
     this.app.play();
@@ -92,9 +94,8 @@ export class Tour {
     this.spotEl = el;
     if (!el) return;
     el.classList.add('spot');
-    // Narrow screens stack canvas above panel and the tour sheet covers the bottom: bring the region of interest to the top.
-    const narrow = this.doc.defaultView.matchMedia('(max-width: 860px)').matches;
-    scrollTo.scrollIntoView({ block: narrow ? 'start' : 'nearest', behavior: 'auto' });
+    // The page itself does not scroll (full-screen layout); this only scrolls inside an open panel.
+    scrollTo.scrollIntoView({ block: 'nearest', behavior: 'auto' });
   }
 
   goTo(i) {
@@ -108,6 +109,12 @@ export class Tour {
     const byId = (id) => this.doc.getElementById(id);
     const sigmaRow = this.doc.querySelector('[data-param="sigma"]');
     const stage = this.doc.querySelector('.stage');
+    // The parameter steps need the Parameters panel open; the transport bar is always on screen. Presentation only: the
+    // steps, their gates and the experiment are unchanged.
+    if (this.panels) {
+      if (name === 'params' || name === 'change') this.panels.open('params');
+      else if (this.panels.isOpen('params')) this.panels.close('params');
+    }
     // [highlighted element, element to scroll into view]: canvas + transport stay together for the "watching" steps.
     const target = { controls: [byId('card-transport'), stage], params: [byId('card-params')], observe: [byId('card-transport'), stage],
       change: [sigmaRow], watch: [byId('card-transport'), stage] }[name];

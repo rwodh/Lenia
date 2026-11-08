@@ -9,8 +9,8 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | 1 Foundation | Done |
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
 | 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28), start-cell placement of the selected organism (decision 29). Not done: more patterns, adding copies of the selected organism to a running world (decision 31) |
-| 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart), and two display-only aids: trails and an activity map (decision 30). No speed estimate |
-| 5 Quality | Partial: 122 unit tests, three browser GPU/UI pages, context-loss fault injection, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 4 Visualization | Partial: a full-screen floating interface (decision 36), a periodic surround around the world (decision 35), two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart), and two display-only aids: trails and an activity map (decision 30). No speed estimate |
+| 5 Quality | Partial: 123 unit tests, three browser GPU/UI pages, context-loss fault injection, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, a static `404.html`, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
@@ -169,8 +169,22 @@ outside the repo produced it.
     to compile", the overlay switched off, `INVALID_OPERATION` 1282, the panel never hidden, float16 after recovery). The
     "context restore keeps the view" check now holds off real input during its wait: with a real wheel event sent in that wait it
     passed twice (it failed twice before). Unknown paths get `404.html` (locally; the host is unverified).
+26. **Floating, full-screen interface and periodic surround (M2, 9 Nov 2026; decisions 35 and 36; in repo: `gpu-parity.html`
+    surround checks, `view-math.test.js`, `ui-flow.html` M2 block and tour checks; Chrome 156, normal window, AMD renderer above).**
+    With the surround on, every pixel of the main square is byte-identical to the pre-View shader (135,810 pixels, 4 canvas sizes,
+    both palettes); a surround pixel equals the dimmed colour of the same cell one period away within 1 LSB, and the period line
+    has the expected colour. Every control is reachable from its panel by mouse and keyboard, one panel opens per side, Esc closes
+    the latest and returns focus to its button, no panel covers the transport bar (desktop and 390 px), tooltips are hoverable and
+    dismissed by Esc, Hide-UI keeps the world running, the tour opens the Parameters panel for its parameter steps and still
+    passes its gates. Text contrast on the glass panel is at least 5.56:1 even over white (muted text), computed. Cost (Reported):
+    the full-viewport display pass takes 0.4 to 1.0 ms GPU time per frame (p50) at 1280 x 720 and 1440 x 900, the surround adds
+    0.1 to 0.2 ms; the effect of backdrop blur on frame time was inconclusive on this machine.
 
 ## Unresolved or unverified
+- **The floating interface on real devices** (decision 36): touch was exercised with synthetic pointer events and an emulated
+  390 x 844 phone only; no screen reader was used (the panels have `aria-expanded`/`aria-controls`, tooltips
+  `aria-describedby`, the cell readout is `aria-live="off"`). Backdrop blur's cost on a slow GPU is unmeasured; whether to
+  default to Solid there waits for a trustworthy GPU-limited flag (see below).
 - **The GPU-limited flag is mostly a false positive on a 144 Hz display** (Reported, scratchpad probe, 8 and 9 Nov 2026, the AMD
   renderer above, Chrome 156 normal window). At grids 64 and 128 the GPU spends about 1 ms per frame (timer query, p50; p90 1.7 to
   3.4 ms) of a 7 ms frame interval, but a frame fence signals 1 to 3 frames after submission (presentation latency, not load).

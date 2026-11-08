@@ -6,7 +6,18 @@ Computer Graphics Lab project, R. P. Shaha University.
 
 ## What you get
 
-An "observatory" layout: the simulation canvas fills the left, a control panel the right (stacked on phones).
+A full-screen layout (`DECISIONS.md` 36): the world covers the whole window and the default screen shows only buttons. The
+**LENIA** wordmark (top left) opens About; the **status chip** (top right: Running/Paused, generation, a *GPU-limited* badge when it
+applies) opens Status; **H** or the eye button hides the whole interface. Icon rails open floating panels on demand: left,
+*Organism* and *View* (with *Help* at the bottom); right, *Parameters*, *Observatory* and *Status*. The **transport bar** (Play/Pause,
+Step, Reset, speed) sits at the bottom centre, the **zoom tools** and the cell readout at the bottom right, and notes appear as
+toasts at the top. One panel is open per side; Esc closes the latest and returns focus to its button; tooltips name each icon and
+its shortcut. Panels are translucent ("glass") or solid (the View panel). On phones (720 px and narrower) the two rails form one
+bottom toolbar and panels open as bottom sheets, one at a time, above the transport bar. Every piece of information and every
+control from the earlier layout is still there; explanations sit behind small "i" disclosures.
+
+- **Periodic surround** (display only, on by default): around the main square (one world period) the view shows the wrapped
+  continuation of the world, dimmed, with a faint line at each world edge; *Place* and *Add* work there too. Off: plain background.
 
 - **Guided Discovery** (first visit, or the *Guided tour* button): a skippable, 7-step introduction with concise Bangla
   explanations next to the English. It introduces the real controls, then runs one interactive experiment on the live
@@ -14,12 +25,12 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
   press Play and watch the organism fade. *Next* unlocks only when you have actually done each part. Esc or *Skip* leaves at any
   time; leaving (or *Enter Lenia Explorer*) resets Orbium and its parameters and plays. First-visit memory is one flag in
   `localStorage` (`lenia.tour.v1`); if storage is blocked the tour simply shows again. `?tour` forces it open.
-- **Organisms**: an *Organism* card chooses between two verified organisms from Chan's Lenia catalogue, **Orbium unicaudatus (O2u)**,
+- **Organisms**: the *Organism* panel chooses between two verified organisms from Chan's Lenia catalogue, **Orbium unicaudatus (O2u)**,
   the default, and **Orbium bicaudatus (O2b)**. Choosing one loads its own seed and its own parameters (R, T, mu, sigma), updates the
   status label and the slider "(start: ...)" values, and restarts; Reset (and `R`) then restores the *selected* organism. Play/pause
   and speed are kept. The choice is locked while the guided tour is open (the tour always runs on O2u and ends with it selected) and
   when the URL changes the kernel radius (the noise start has no organisms).
-- **Observatory** (read-only): a card with live measurements of the running state: mass (sum of all cell values), active area
+- **Observatory** (read-only): a panel with live measurements of the running state: mass (sum of all cell values), active area
   (cells above 0.01), the circular-mean centroid on the wrapping grid (shown only when the values are concentrated), the generation
   each value describes, and a mass-by-generation chart of the last 240 samples. The state is copied from the GPU asynchronously, at
   most every 250 ms (500 ms at grid 512) and not at all while the GPU is behind, so on a slow GPU or a large grid the card can
@@ -28,7 +39,8 @@ An "observatory" layout: the simulation canvas fills the left, a control panel t
 - **Lenia Explorer**: Play/Pause, Step (exactly one step, paused only), Reset (initial organism *and* initial parameters; play state
   and speed are kept), Speed (0.25x to 2x of the 60 steps/s base rate), live sliders for mu, sigma and T, two colour maps
   (Ocean, Viridis; display only), status (Running/Paused, generation, pattern, world, render rate), and a
-  "What are you observing?" explanation in English and Bangla. Keys: `Space` play/pause, `S` step, `R` reset.
+  "What are you observing?" explanation in English and Bangla (Help panel). Keys: `Space` play/pause, `S` step, `R` reset, `H` hide
+  or show the interface, `Esc` close a panel or cancel *Place* / *Add*.
 - **World View** (display only): zoom with the wheel (about the cursor), a two-finger pinch, the + / - buttons or keys; pan by
   dragging, or with the arrow keys when the view has focus; `0` or *Reset view* shows the whole world again. The world wraps, so
   panning past an edge continues seamlessly. A "Cell (x, y)" readout names the cell under the pointer (cell (0, 0) is bottom-left).
@@ -102,13 +114,14 @@ src/simulation/             kernel/growth math, params validation, seeds and pla
                             patterns.js = verified upstream organism data and the two-entry registry (O2u, O2b); rle.js = strict decoder
                             startup.js = decides the starting state + parameters (Orbium O2u, or noise if the URL is incompatible); planPattern() plans a selection
                             lenia.js = GPU simulation (ping-pong R32F textures, one fragment pass per step)
-src/render/renderer.js      display pass (colour map, smooth magnification, World View uniforms) + drawing-buffer sizing
+src/render/renderer.js      display pass (colour map, smooth magnification, World View uniforms, periodic surround) + drawing-buffer sizing
 src/render/view-math.js     World View mapping screen <-> cell, zoom about a point, pan, wrap, limits (pure; same maths as the shader)
 src/simulation/scheduler.js pure per-frame step planning (play / pause / single-step), unit-tested without WebGL
 src/simulation/observables.js  mass, active area, circular centroid + validity (pure; used by the app and the tests)
 src/simulation/sampler.js   when to sample (rate limit, GPU back-off, only on change) and the bounded sample history
-src/ui/                     hud.js (status), controls.js (panel wiring), tour.js (Guided Discovery), experiment.js (tour progress
-                            logic), storage.js (first-visit flag), observatory.js (Observatory card and chart), view-controls.js (World View
+src/ui/                     hud.js (status chip, Status panel, note toast), controls.js (control wiring), panels.js (floating panels,
+                            bottom sheets, Hide-UI), tooltips.js, tour.js (Guided Discovery), experiment.js (tour progress logic),
+                            storage.js (first-visit flag), observatory.js (Observatory panel and chart), view-controls.js (World View
                             input and cell readout), fatal.js. All text via textContent, never innerHTML
 tests/unit/                 Node tests for the pure modules (incl. decoder, pattern provenance, placement)
 tests/fixtures/             reference decodes of O2u and O2b produced by the upstream decoder source; a frozen copy of the

@@ -21,6 +21,11 @@ uniform vec2 uOffset;
 uniform sampler2D uOverlay;
 uniform int uOverlayMode;
 uniform float uOverlayScale;
+// Periodic surround (decision 35): 0 = background outside the main square, as before; 1 = the wrapped continuation, its colour
+// times uSurroundDim, with a 1 px period boundary mixed uSurroundLine towards white. The main square is unaffected.
+uniform int uSurround;
+uniform float uSurroundDim;
+uniform float uSurroundLine;
 
 out vec4 outColor;
 
@@ -83,12 +88,23 @@ float sampleOverlay(vec2 pos) {
 void main() {
   float side = min(uCanvasSize.x, uCanvasSize.y) * uZoom;
   vec2 uv = (gl_FragCoord.xy - 0.5 * uCanvasSize) / side + 0.5;
-  if (any(lessThan(uv, vec2(0.0))) || any(greaterThanEqual(uv, vec2(1.0)))) {
+  bool outside = any(lessThan(uv, vec2(0.0))) || any(greaterThanEqual(uv, vec2(1.0)));
+  if (outside && uSurround == 0) {
     outColor = vec4(BACKGROUND, 1.0);
     return;
   }
   vec2 pos = uv * float(uGridSize) + uOffset;
+  // Outside the main square uv is unbounded, so the position is wrapped into one period first; afterwards the same c >= -1
+  // bound as in the square holds for cell(). Grid sizes are powers of two, so mod() is exact here. The square never takes
+  // this branch, so its pixels are computed exactly as without the surround.
+  if (outside) pos = mod(pos, float(uGridSize));
   float v = uOverlayMode == 0 ? clamp(sampleState(pos), 0.0, 1.0) : clamp(sampleOverlay(pos) * uOverlayScale, 0.0, 1.0);
-  outColor = vec4(clamp(uPalette == 1 ? observatory(v) : viridis(v), 0.0, 1.0), 1.0);
+  vec3 colour = clamp(uPalette == 1 ? observatory(v) : viridis(v), 0.0, 1.0);
+  if (outside) {
+    colour *= uSurroundDim;
+    vec2 toEdge = abs(fract(uv + 0.5) - 0.5) * side; // buffer pixels to the nearest period boundary
+    if (min(toEdge.x, toEdge.y) < 0.5) colour = mix(colour, vec3(1.0), uSurroundLine);
+  }
+  outColor = vec4(colour, 1.0);
 }
 `;

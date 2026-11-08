@@ -5,7 +5,7 @@ import { OverlayAccumulator, OVERLAY_MODE } from './gl/overlay.js';
 import { StampPass } from './gl/stamp.js';
 import { computeObservables } from './simulation/observables.js';
 import { shouldSample, sampleIntervalFor, SampleHistory } from './simulation/sampler.js';
-import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES, VIEW, VISUAL, ADDITIONS } from './config.js';
+import { LOOP, SPEEDS, DEFAULT_SPEED_ID, UI_RANGES, PALETTES, VIEW, VISUAL, ADDITIONS, SURROUND, PANEL_STYLES } from './config.js';
 import * as viewMath from './render/view-math.js';
 import { Renderer } from './render/renderer.js';
 import { LeniaSimulation } from './simulation/lenia.js';
@@ -49,6 +49,9 @@ export class App {
     this.palette = PALETTES[0];
     // World View (display only): kept across Reset, pattern switches and context restores; the tour resets it.
     this.view = viewMath.defaultView(params.gridSize);
+    // Periodic surround (display only, decision 35) and the floating panels' look: user-facing display preferences.
+    this.surround = SURROUND.default;
+    this.panelStyle = PANEL_STYLES[0];
     // Visualization aid (display only): 'off' allocates nothing and adds no pass; otherwise one pass per simulation step.
     this.visualMode = 'off';
     this.decay = VISUAL.decay.default;
@@ -98,7 +101,7 @@ export class App {
       this.stamp = null; // likewise; recreated on the next addition
       this.clearObservations();
       this.setObservatoryUnavailable('graphics context lost');
-      this.hud.setNote('Graphics context lost. Waiting for the browser to restore it...');
+      this.hud.setNote('Graphics context lost. Waiting for the browser to restore it...', { persistent: true });
     });
     canvas.addEventListener('webglcontextrestored', () => {
       try {
@@ -388,6 +391,19 @@ export class App {
     return this.decay;
   }
 
+  /** Periodic surround on or off (display only: the main square and the simulation are unaffected). */
+  setSurround(on) {
+    this.surround = !!on;
+    this.emit();
+  }
+
+  /** 'glass' (translucent, blurred) or 'solid' panels. Display only. */
+  setPanelStyle(style) {
+    if (!PANEL_STYLES.includes(style)) throw new RangeError(`unknown panel style "${style}"`);
+    this.panelStyle = style;
+    this.emit();
+  }
+
   setPalette(name) {
     if (!PALETTES.includes(name)) throw new RangeError(`unknown palette "${name}"`);
     this.palette = name;
@@ -419,9 +435,9 @@ export class App {
     this.setView(viewMath.defaultView(this.worldSize));
   }
 
-  /** The cell { x, y } under buffer pixel (px, py), or null where the background is shown. */
+  /** The cell { x, y } under buffer pixel (px, py) (wrapping in the periodic surround), or null where the background is shown. */
   cellAt(px, py) {
-    return viewMath.cellAt(this.view, this.worldSize, this.canvas.width, this.canvas.height, px, py);
+    return viewMath.cellAt(this.view, this.worldSize, this.canvas.width, this.canvas.height, px, py, { surround: this.surround });
   }
 
   setView(view) {
@@ -445,6 +461,9 @@ export class App {
       speedId: SPEEDS.find((s) => s.stepsPerSecond === this.stepsPerSecond)?.id,
       palette: this.palette,
       view: this.view, // replaced (never mutated) on each change
+      surround: this.surround,
+      panelStyle: this.panelStyle,
+      gpuBound: this.gpuBound,
       visualMode: this.visualMode,
       decay: this.decay,
       gridSize: this.sim ? this.sim.size : this.params.gridSize,
@@ -562,7 +581,7 @@ export class App {
 
     const scale = mode === OVERLAY_MODE.activity ? (1 - this.decay) * this.params.timeSteps : 1; // activity: (1 - decay) / dt
     this.renderer.draw(this.sim.stateTexture, this.sim.size, viewMath.viewUniforms(this.view, this.sim.size),
-      ov ? { texture: ov.texture, mode, scale } : null);
+      ov ? { texture: ov.texture, mode, scale } : null, this.surround ? SURROUND : null);
     this.requestSample(now); // only reached when the fence allowed this frame, i.e. the GPU is keeping up
     this.fence.mark();
 

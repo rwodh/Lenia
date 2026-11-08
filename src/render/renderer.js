@@ -13,6 +13,7 @@ export class Renderer {
     this.caps = caps;
     this.program = createProgram(gl, 'display', fullscreenVert, displayFrag, [
       'uState', 'uGridSize', 'uCanvasSize', 'uPalette', 'uZoom', 'uOffset', 'uOverlay', 'uOverlayMode', 'uOverlayScale',
+      'uSurround', 'uSurroundDim', 'uSurroundLine',
     ]);
     this.vao = gl.createVertexArray();
     this.palette = 0; // viridis; the app selects its own default through setPalette()
@@ -43,8 +44,10 @@ export class Renderer {
   /**
    * `view` is { offsetX, offsetY, zoom } from viewUniforms() (src/render/view-math.js); omitted = the default fit.
    * `overlay` is null (draw the state) or { texture, mode, scale } (src/gl/overlay.js): draw that aid instead. Display only.
+   * `surround` is null (background outside the main square, as before) or { dim, line } (SURROUND in config.js): draw the
+   * wrapped continuation there, dimmed, with a faint period boundary. The main square is drawn the same either way.
    */
-  draw(stateTexture, gridSize, view = DEFAULT_VIEW, overlay = null) {
+  draw(stateTexture, gridSize, view = DEFAULT_VIEW, overlay = null, surround = null) {
     const { gl, program, canvas } = this;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
@@ -64,6 +67,9 @@ export class Renderer {
     gl.uniform1i(program.uniforms.uOverlay, 1);
     gl.uniform1i(program.uniforms.uOverlayMode, overlay ? overlay.mode : 0);
     gl.uniform1f(program.uniforms.uOverlayScale, overlay ? overlay.scale : 1);
+    gl.uniform1i(program.uniforms.uSurround, surround ? 1 : 0);
+    gl.uniform1f(program.uniforms.uSurroundDim, surround ? surround.dim : 1);
+    gl.uniform1f(program.uniforms.uSurroundLine, surround ? surround.line : 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
