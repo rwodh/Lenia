@@ -87,7 +87,7 @@ export const OBSERVATORY = Object.freeze({
   historyLength: 240,
 });
 
-/** World View (display only; src/ui/view-math.js). Zoom 1 shows the whole world; the view never changes the simulation. */
+/** World View (display only; src/render/view-math.js). Zoom 1 shows the whole world; the view never changes the simulation. */
 export const VIEW = Object.freeze({
   /** Largest magnification over the default fit (at grid 128 on a 600 px square, one cell is then about 75 px). */
   maxZoom: 16,

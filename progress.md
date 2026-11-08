@@ -109,7 +109,7 @@ outside the repo produced it.
     kept; an unknown id is rejected; 25 O2u/O2b round trips leave the same simulation, kernel texture, state textures and program
     in place, at most one pending animation frame and no GL error; the tour started from O2b selects O2u, locks the selector, runs
     through and ends on O2u; `?radius=10` locks the selector. A context loss and restore after selecting O2b re-seeds O2b with O2b's
-    parameters, but see the float16 note under "Unresolved". A bug was found by running this page: the first version of
+    parameters (at the time the restored state was float16; fixed later, see fact 22). A bug was found by running this page: the first version of
     `Tour.open()` selected the pattern while the tour's own status listener was already active and threw; it was fixed by selecting
     before the tour is marked open.
 18. **Observatory, unit level** (in repo: `tests/unit/observables.test.js`, `sampler.test.js`; 16 tests). Exact mass; strict 0.01

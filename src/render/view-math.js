@@ -83,7 +83,8 @@ export function panBy(view, n, width, height, dpx, dpy, maxZoom) {
 
 /**
  * Shader uniforms for a view: the offset added to uv * n, and the zoom. The offset is wrapped into [0, n) (the same picture,
- * since the world is periodic) so the shader's cell indices stay non-negative: GLSL ES leaves `%` undefined for negative
- * operands.
+ * since the world is periodic), so the sample position is never negative. The bilinear footprint can still reach index -1
+ * at the lowest edge, which cell() in display.frag.js passes to `%`; GLSL ES leaves `%` undefined for negative operands.
+ * It works on the recorded ANGLE/D3D11 renderer; other GPUs are untested.
  */
 export const viewUniforms = (view, n) => ({ offsetX: wrap(view.cx - n / 2, n), offsetY: wrap(view.cy - n / 2, n), zoom: view.zoom });
