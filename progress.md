@@ -10,8 +10,8 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
 | 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28), start-cell placement of the selected organism (decision 29). Not done: more patterns, adding copies of the selected organism to a running world (decision 31) |
 | 4 Visualization | Partial: two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart), and two display-only aids: trails and an activity map (decision 30). No speed estimate |
-| 5 Quality | Partial: 120 unit tests, three browser GPU/UI pages, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
-| 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
+| 5 Quality | Partial: 122 unit tests, three browser GPU/UI pages, context-loss fault injection, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, a static `404.html`, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
 ## Proposal feature status (`CGL_Project_Proposal.pdf`, section 4)
@@ -159,8 +159,24 @@ outside the repo produced it.
     addition count (mass 76.86 with 0 added, 153.73 with 1, generation 0), and the first activity increase is at most 1/T per cell
     (measured 0.1000), so the insertion is not recorded as activity. On the CPU reference two copies half a world apart evolve
     exactly as two independent copies (grid 128, 30 steps). What happens when organisms meet is not claimed.
+25. **Release hardening (M1, 8 Nov 2026; decisions 32 to 34; in repo: `shaders.test.js`, `headers.test.js`, `ui-flow.html`
+    context-loss guard block; Chrome 156 in a normal window with background throttling off, AMD renderer above).** Integer
+    remainders in the shaders keep both operands non-negative (the display shader's change keeps the default view byte-identical).
+    While the context is lost or after a failed restore, *Add* is refused with a "graphics context not available" note (no
+    uncaught error), an overlay switched on is kept and created by the restore, an organism switch is applied by the restore
+    exactly, and Reset or `R` leave no GL error; a later successful restore hides the error panel and keeps float32 even with a
+    stale GL error left on the context (probe drain). Six of these checks failed on the code before (an uncaught "shader failed
+    to compile", the overlay switched off, `INVALID_OPERATION` 1282, the panel never hidden, float16 after recovery). The
+    "context restore keeps the view" check now holds off real input during its wait: with a real wheel event sent in that wait it
+    passed twice (it failed twice before). Unknown paths get `404.html` (locally; the host is unverified).
 
 ## Unresolved or unverified
+- **The GPU-limited flag is mostly a false positive on a 144 Hz display** (Reported, scratchpad probe, 8 Nov 2026, the AMD
+  renderer above, Chrome 156 normal window). At grids 64 and 128 the GPU spends about 1 ms per frame (timer query, p50; p90 1.7 to
+  3.3 ms) of a 7 ms frame interval, but a frame fence takes 1 to 2 frames to signal (presentation latency, not load). With
+  `LOOP.maxFramesInFlight` = 2, frames were held back 40 to 64 % of the time, the flag was on 23 to 95 % (73 % at grid 64), the
+  simulation ran at 52 to 62 steps/s instead of 60, and the Observatory does not sample while the flag is on. A change would
+  touch the in-flight cap the frame fence enforces, so it waits for an owner decision (proposal in the M1 report).
 - **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
   or performance figure was taken (the built-in browser pane delivered animation frames at roughly 5 Hz while the pages ran, so
   such numbers would not mean anything), and the `maxTapsPerStep` cap (200M, an estimate) and 2x speed remain untested. A 512 grid

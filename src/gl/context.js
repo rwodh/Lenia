@@ -10,6 +10,10 @@ function probeStateFormat(gl) {
   // Rendering to float textures needs one of these (WebGL2 does not make it core).
   gl.getExtension('EXT_color_buffer_float');
   gl.getExtension('EXT_color_buffer_half_float');
+  // Clear errors left by earlier work on this context (for example a call on a stale object after a failed restore), so the
+  // getError() check below sees only the probe's own errors. Bounded: a lost context reports CONTEXT_LOST_WEBGL once, then
+  // NO_ERROR, but a stuck implementation must not hang the page (owner-approved, 8 Nov 2026).
+  for (let i = 0; i < 64 && gl.getError() !== gl.NO_ERROR; i++);
 
   for (const fmt of STATE_FORMATS) {
     const tex = gl.createTexture();

@@ -67,8 +67,9 @@ Browser GPU checks (the last line of each must read `ALL PASS`):
   Observatory (samples, generation tags, Reset/switch/restore clearing, GPU back-off, readback failure, narrow layout), a
   check that repeated interaction never creates a second animation loop, and the whole guided tour including its
   first-visit memory; the World View inputs and lifecycle, placement, the overlays, and adding organisms (exact state, sample tags,
-  overlays kept, cap, Reset, locks). It needs animation frames, so keep the page visible: a hidden browser pane stalls it. It took
-  several minutes in the built-in pane on the AMD renderer.
+  overlays kept, cap, Reset, locks), and actions while the graphics context is lost or after a failed restore (fault injection
+  in the test page only). It needs animation frames, so keep the page visible: a hidden browser pane stalls it. It takes under a
+  minute in a normal Chrome window on the AMD renderer (several minutes in the built-in pane).
 - `http://localhost:8080/tests/browser/orbium-gpu.html` - each library organism on the GPU (O2u, then O2b with `[O2b]` lines): parity after
   1/5/20 steps, a long run (`?long=1000`), observable parity with the CPU, grid-size independence, and the Observatory's sampled metrics
   against the CPU reference. Pointwise GPU-vs-CPU equality is
@@ -116,6 +117,7 @@ tests/browser/              in-browser GPU checks (parity, organisms, readback) 
 tools/serve.js              zero-dependency localhost dev server (optionally the production headers and a subpath)
 tools/headers.js            reads _headers (pure; used by serve.js and tests/unit/headers.test.js)
 _headers                    production response headers (CSP, nosniff, referrer, permissions, cache policy)
+404.html, 404.css           static not-found page a host serves at unknown paths (no script; root-relative links)
 docs/DEPLOYMENT.md          what is published, host settings, post-deploy checklist, real-browser results template
 ```
 
@@ -135,7 +137,9 @@ State never leaves the GPU during stepping.
   equal. Not deployed yet: see `docs/DEPLOYMENT.md`.
 - All parameters are validated; kernel radius is lowered automatically to keep `grid^2 * (2R+1)^2` under a cap.
 - Drawing buffer is capped at 4096x2160 pixels. WebGL2 absence, float-target absence, shader compile/link failure,
-  GPU allocation failure and context loss all produce a user-facing message or recovery, never a silent failure.
+  GPU allocation failure and context loss all produce a user-facing message or recovery, never a silent failure. While the
+  context is lost (or after a failed restore) Reset, organism and start-cell choices and overlays are kept and applied by the
+  restore, *Add* says it must wait, and a successful restore hides the error panel (`DECISIONS.md` 33).
 - The only persisted data is the tour flag above. Fonts are system stacks (Bengali: Noto Sans Bengali, Nirmala UI, ...), so no font
   files or network requests are needed. The CSP is unchanged.
 - Dev server binds to 127.0.0.1, blocks path traversal and dotfiles; `--headers=prod` sends the production headers. Hosting:

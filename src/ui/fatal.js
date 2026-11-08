@@ -10,3 +10,12 @@ export function showFatal(panel, error) {
   detail.hidden = !text;
   panel.hidden = false;
 }
+
+/** Hide the panel again, after the app has recovered (a later successful context restore). */
+export function hideFatal(panel) {
+  panel.hidden = true;
+  panel.querySelector('[data-fatal="message"]').textContent = '';
+  const detail = panel.querySelector('[data-fatal="detail"]');
+  detail.textContent = '';
+  detail.hidden = true;
+}
