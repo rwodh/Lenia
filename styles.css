@@ -58,7 +58,7 @@ html, body {
 #lenia-canvas.dragging { cursor: grabbing; }
 #lenia-canvas.placing { cursor: crosshair; }
 .place-row { justify-content: flex-start; flex-wrap: wrap; }
-#btn-place[aria-pressed="true"] { background: rgba(63, 214, 200, 0.18); border-color: var(--accent); }
+#btn-place[aria-pressed="true"], #btn-add[aria-pressed="true"] { background: rgba(63, 214, 200, 0.18); border-color: var(--accent); }
 #lenia-canvas:focus-visible { outline-offset: -2px; }
 .view-tools { position: absolute; top: 12px; right: 14px; display: flex; align-items: center; gap: 6px; }
 .view-btn { padding: 3px 10px; background: rgba(11, 13, 18, 0.7); }

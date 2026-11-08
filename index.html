@@ -180,6 +180,11 @@
             <button type="button" class="btn btn-ghost" id="btn-centre">Centre</button>
             <span class="hint start" data-pattern="start">Start: centre</span>
           </div>
+          <div class="row place-row">
+            <button type="button" class="btn" id="btn-add" aria-pressed="false" aria-describedby="add-hint">Add</button>
+            <span class="hint start" data-pattern="added">Added: 0</span>
+          </div>
+          <p class="hint" id="add-hint">Add, then click a cell: a copy of this organism joins the running world there. Where the world is not empty each cell keeps the larger value. Reset removes added copies; with two or more the centroid usually reads "not meaningful".</p>
           <p class="hint" id="place-hint">Place, then click a cell in the view: the organism starts there. Reset restores it at that cell, and switching organism keeps the cell.</p>
           <p class="hint" data-pattern="locked" hidden></p>
         </section>

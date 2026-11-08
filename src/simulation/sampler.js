@@ -18,22 +18,28 @@ export function shouldSample({ available, busy, gpuBound, generation, lastGenera
   return nowMs - lastSampleMs >= intervalMs;
 }
 
-/** Fixed-capacity history of { generation, mass } samples, oldest first; older samples are dropped. */
+/**
+ * Fixed-capacity history of { generation, mass, adds } samples, oldest first; older samples are dropped. `adds` is the number of
+ * organisms added to the live world before the sample was taken (Phase 4b): an addition does not advance the generation, so
+ * samples before and after one can share a generation and are told apart by it.
+ */
 export class SampleHistory {
   constructor(capacity = OBSERVATORY.historyLength) {
     if (!Number.isInteger(capacity) || capacity < 2) throw new RangeError('history capacity must be an integer >= 2');
     this.capacity = capacity;
     this.generations = new Float64Array(capacity);
     this.masses = new Float64Array(capacity);
+    this.adds = new Uint16Array(capacity);
     this.start = 0;
     this.length = 0;
     this.version = 0; // changes on every push/clear, so a view can redraw only when needed
   }
 
-  push(generation, mass) {
+  push(generation, mass, adds = 0) {
     const i = (this.start + this.length) % this.capacity;
     this.generations[i] = generation;
     this.masses[i] = mass;
+    this.adds[i] = adds;
     if (this.length < this.capacity) this.length++;
     else this.start = (this.start + 1) % this.capacity;
     this.version++;
@@ -48,7 +54,7 @@ export class SampleHistory {
   /** k-th sample, oldest first. */
   at(k) {
     const i = (this.start + k) % this.capacity;
-    return { generation: this.generations[i], mass: this.masses[i] };
+    return { generation: this.generations[i], mass: this.masses[i], adds: this.adds[i] };
   }
 
   /** min/max mass and generation range of the samples held; null when empty. */

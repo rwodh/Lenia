@@ -111,5 +111,9 @@ export const VISUAL = Object.freeze({
   decay: Object.freeze({ min: 0.8, max: 0.999, step: 0.001, default: 0.95 }),
 });
 
+/** Phase 4b: organisms added to a running world (copies of the selected one). Reset removes them; the cap bounds the
+ *  Observatory markers, the label and test time. */
+export const ADDITIONS = Object.freeze({ max: 8 });
+
 export const PALETTES = Object.freeze(['observatory', 'viridis']);
 export const TOUR_STORAGE_KEY = 'lenia.tour.v1';

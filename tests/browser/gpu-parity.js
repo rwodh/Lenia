@@ -12,6 +12,10 @@ import { LeniaError } from '../../src/errors.js';
 import { AsyncReadback } from '../../src/gl/readback.js';
 import { defaultView, viewUniforms, worldToBuffer, cellAt } from '../../src/render/view-math.js';
 import { OverlayAccumulator, OVERLAY_MODE } from '../../src/gl/overlay.js';
+import { StampPass } from '../../src/gl/stamp.js';
+import { stampMax } from '../../src/simulation/seed.js';
+import { decodeRle } from '../../src/simulation/rle.js';
+import { ORBIUM_O2U } from '../../src/simulation/patterns.js';
 import fullscreenVert from '../../src/shaders/fullscreen.vert.js';
 import preViewFrag from '../fixtures/display-pre-view.frag.js';
 
@@ -307,6 +311,32 @@ try {
           : `info  aid cost at grid ${n} (GPU timer, ${reps} passes each): step ${(step / reps).toFixed(3)} ms/pass, accumulation ${(aid / reps).toFixed(3)} ms/pass (${((aid / step) * 100).toFixed(2)} % of a step)`, 'info');
         acc.dispose(); sim.dispose();
       }
+    }
+  }
+
+  // 6. Phase 4b stamp (adding an organism to the live state): the GPU pass equals the CPU twin stampMax exactly (float32), also
+  //    across the world's corner; it is not a step (generation unchanged); float16 within its rounding.
+  {
+    const pat = decodeRle(ORBIUM_O2U.rle);
+    const formats = [['float32', caps.stateFormat]];
+    if (caps.stateFormat.name === 'float32') formats.push(['float16', { name: 'float16', internalFormat: 'R16F' }]);
+    for (const [fname, stateFormat] of formats) {
+      const sim = new LeniaSimulation(gl, { ...caps, stateFormat }, normalizeParams({ gridSize: 64, radius: 13, seed: 2 }).params);
+      const stamp = new StampPass(gl);
+      sim.reset(randomDiscSeed(64, { radiusFraction: 0.45, seed: 2 }));
+      for (let i = 0; i < 3; i++) sim.step();
+      let cpu = sim.readState();
+      const g = sim.generation, tol = fname === 'float32' ? 0 : 1e-3;
+      let worst = 0;
+      for (const [x, y] of [[20, 40], [0, 63], [63, 0], [20, 40]]) { // the last repeats the first: max is idempotent
+        stamp.apply(sim, 'O2u', pat, x, y);
+        cpu = stampMax(cpu, 64, pat, x, y);
+        worst = Math.max(worst, maxAbsDiff(sim.readState(), cpu));
+      }
+      check(`stamp (${fname}): the GPU pass equals the CPU twin (4 additions incl. the world corner and a repeat); generation unchanged`,
+        worst <= tol && sim.generation === g, `maxAbsDiff=${worst.toExponential(2)} tol=${tol} generation ${g} -> ${sim.generation}`);
+      check(`stamp (${fname}): no pending GL error`, gl.getError() === gl.NO_ERROR);
+      stamp.dispose(); sim.dispose();
     }
   }
 } catch (e) {
