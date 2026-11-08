@@ -1,7 +1,7 @@
 // Draws the simulation state to the screen: aspect-correct square fit, smooth
 // (manual bilinear) magnification, and a selectable colour map (0 = viridis, 1 = observatory).
 // Colour is display only; the simulation state is never modified. Cell (0,0) is bottom-left.
-// World View (src/ui/view-math.js has the same mapping in JS): uZoom magnifies about the canvas centre and uOffset (cells)
+// World View (src/render/view-math.js has the same mapping in JS): uZoom magnifies about the canvas centre and uOffset (cells)
 // shifts the world; one period of the periodic world is drawn around the view centre, wrapping seamlessly across its edges.
 // The default view (zoom 1, offset 0) evaluates exactly the original expressions, so it draws the same bytes as before.
 export default /* glsl */ `#version 300 es
