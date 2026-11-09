@@ -2,7 +2,9 @@
 // Usage: npm start   (PORT=9000 npm start to change the port). Binds to localhost only.
 // Options (after `npm start --`):
 //   --headers=prod   send the production headers from `_headers` (as the host would) instead of the dev `no-store`
-//   --base=/Lenia/   serve the site under a subpath, to check that nothing assumes it is hosted at the root
+//   --base=Lenia     serve the site under a subpath (/Lenia/), to check that nothing assumes it is hosted at the root
+//                    (write it without slashes in Git Bash, which rewrites arguments that start with /)
+// With --headers=prod, a path that matches no file gets 404.html with status 404, as a static host would.
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { readFile, stat } from 'node:fs/promises';
@@ -30,13 +32,21 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(code, { ...headers, ...extra, 'Content-Type': type });
     res.end(req.method === 'HEAD' ? undefined : body);
   };
+  // With --headers=prod a path that matches no file gets the top-level 404.html with status 404, as static hosts that find
+  // one do (Cloudflare Pages, Netlify); the headers are those of the requested path, so the page relies on its meta CSP.
+  const notFound = async () => {
+    if (prodRules) {
+      try { return send(404, await readFile(path.join(root, '404.html')), types['.html']); } catch { /* no 404 page */ }
+    }
+    return send(404, 'Not found');
+  };
   if (req.method !== 'GET' && req.method !== 'HEAD') return send(405, 'Method not allowed');
   try {
     const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     if (urlPath === base.slice(0, -1)) return send(301, '', undefined, { Location: base });
     if (!urlPath.startsWith(base)) return send(404, 'Not found');
     sitePath = '/' + urlPath.slice(base.length);
-    if (prodRules && sitePath === '/_headers') return send(404, 'Not found'); // hosts read it but do not serve it
+    if (prodRules && sitePath === '/_headers') return notFound(); // hosts read it but do not serve it
     let file = path.resolve(root, '.' + (sitePath.endsWith('/') ? sitePath + 'index.html' : sitePath));
     const rel = path.relative(root, file);
     // Stay inside the repo; never serve dotfiles/dot-directories (.git) or node_modules.
@@ -46,7 +56,7 @@ const server = http.createServer(async (req, res) => {
     if ((await stat(file)).isDirectory()) file = path.join(file, 'index.html');
     send(200, await readFile(file), types[path.extname(file)] || 'application/octet-stream');
   } catch {
-    send(404, 'Not found');
+    await notFound();
   }
 });
 

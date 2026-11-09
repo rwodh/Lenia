@@ -68,6 +68,12 @@ export class App {
     this.cleanFrames = 0;
     this.fence = null;
     this.gpuLost = false; // true between a context loss and the next initGpu()
+    // True only while the GPU objects are usable: from a successful initGpu() until a context loss or a failure. While it is
+    // false, actions that only change what the world should be (Reset, organism, start cell, overlay mode) change App state
+    // and leave the GPU alone; the next successful initGpu() uploads that state. Adding an organism needs the live state, so
+    // it is refused with a message instead (decision 33).
+    this.gpuReady = false;
+    this.onRecovered = null; // called after a successful restore (main.js hides the error panel)
 
     // Observatory (read-only): the state is copied to the CPU asynchronously, at most every 250 ms (500 ms at grid 512) and
     // not while the GPU is behind (see requestSample), and measured there.
@@ -85,6 +91,7 @@ export class App {
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault(); // required, otherwise the browser will not try to restore the context
       this.stop();
+      this.gpuReady = false;
       this.gpuLost = true; // initGpu() must not delete the dead objects (see there)
       this.readback = null; // its buffer and fence died with the context; dropped, not disposed
       this.overlay = null; // likewise; recreated by initGpu() if a mode is on
@@ -98,6 +105,7 @@ export class App {
         this.initGpu();
         this.hud.setNote('');
         this.start();
+        this.onRecovered?.(); // an error panel shown by a failed restore no longer describes the app
       } catch (err) {
         this.fail(err);
       }
@@ -108,6 +116,7 @@ export class App {
 
   /** (Re)create every GPU resource. Safe to call again after a context restore. */
   initGpu() {
+    this.gpuReady = false;
     // After a context loss the old objects died with the context and are dropped, not disposed: deleting them raises
     // INVALID_OPERATION, and that leftover error made the format probe reject float32 (progress.md, fact 22).
     if (!this.gpuLost) {
@@ -137,6 +146,7 @@ export class App {
       this.setObservatoryUnavailable(err.message); // the simulation does not depend on it
     }
     this.handleResize();
+    this.gpuReady = true;
   }
 
   // ---- Observatory (read-only; never changes the simulation) ------------------------------------
@@ -229,8 +239,10 @@ export class App {
   /** Restore the initial state AND the parameters the app started with. Play/pause and speed are kept. */
   reset() {
     Object.assign(this.params, this.baseParams);
-    this.sim?.reset(this.initialState);
-    this.overlay?.clear(); // its history described the state that was just replaced
+    if (this.gpuReady) { // otherwise the next successful initGpu() uploads this.initialState (see gpuReady)
+      this.sim.reset(this.initialState);
+      this.overlay?.clear(); // its history described the state that was just replaced
+    }
     this.additions = [];
     this.adding = false;
     this.hud.setPattern(this.displayLabel);
@@ -303,6 +315,12 @@ export class App {
   addAt(cell) {
     if (this.patternId === null) throw new RangeError('this world has no organism to add');
     if (this.additions.length >= ADDITIONS.max) throw new RangeError(`at most ${ADDITIONS.max} organisms can be added; Reset removes them`);
+    if (!this.gpuReady) { // an addition changes the live state, which does not exist while the context is lost
+      this.adding = false;
+      this.hud.setNote('Graphics context not available: organisms can be added again once the browser restores it.');
+      this.emit();
+      return false;
+    }
     const x = cell?.x, y = cell?.y, n = this.sim.size;
     if (![x, y].every((v) => Number.isInteger(v) && v >= 0 && v < n)) throw new RangeError(`cell (${x}, ${y}) is not a cell of the ${n}x${n} grid`);
     if (!this.stamp) this.stamp = new StampPass(this.sim.gl);
@@ -314,6 +332,7 @@ export class App {
     this.lastSampleMs = 0;
     this.hud.setPattern(this.displayLabel);
     this.emit();
+    return true;
   }
 
   /** Back to the centred start (as at launch). */
@@ -344,9 +363,9 @@ export class App {
     if (!VISUAL.modes.includes(mode)) throw new RangeError(`unknown visual mode "${mode}"`);
     this.visualMode = mode;
     if (mode === 'off') {
-      this.overlay?.dispose();
+      if (this.gpuReady) this.overlay?.dispose(); // otherwise its objects are dead or about to be replaced: drop them
       this.overlay = null;
-    } else if (this.sim) {
+    } else if (this.gpuReady) { // otherwise initGpu() creates it for this mode on the next successful restore
       try {
         if (!this.overlay) this.overlay = new OverlayAccumulator(this.sim.gl, this.caps, this.sim.size);
         else this.overlay.clear();
@@ -472,6 +491,7 @@ export class App {
 
   fail(error) {
     this.stop();
+    this.gpuReady = false; // the GPU objects may be partly built or stale; actions wait for the next successful initGpu()
     this.onFatal(error);
   }
 

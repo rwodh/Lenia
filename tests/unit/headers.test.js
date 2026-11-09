@@ -10,6 +10,8 @@ const sorted = (csp) => [...csp].sort();
 const testPages = readdirSync(new URL('../browser/', import.meta.url)).filter((f) => f.endsWith('.html'));
 // Every HTML page the site serves, as the host may request it (Cloudflare also serves pages without the .html extension).
 const appPaths = ['/', '/index.html'];
+// The not-found page as requested directly (a host serves it at unknown paths, where only the /* rule matches).
+const notFoundPaths = ['/404.html', '/404'];
 const testPaths = testPages.flatMap((f) => [`/tests/browser/${f}`, `/tests/browser/${f.slice(0, -5)}`]);
 
 test('the production CSP header for the app equals the meta CSP in index.html, plus frame-ancestors only', () => {
@@ -20,6 +22,19 @@ test('the production CSP header for the app equals the meta CSP in index.html, p
     header.delete('frame-ancestors');
     assert.deepEqual(sorted(header), sorted(meta), p);
   }
+});
+
+test('the not-found page: its meta CSP equals the app\'s, and a direct request gets the app\'s header CSP', () => {
+  assert.deepEqual(sorted(parseCsp(metaCsp(read('404.html')))), sorted(parseCsp(metaCsp(read('index.html')))));
+  const app = sorted(parseCsp(forPath('/').get('content-security-policy')));
+  for (const p of notFoundPaths) assert.deepEqual(sorted(parseCsp(forPath(p).get('content-security-policy'))), app, p);
+  // At an unknown path the host serves this page with the headers of that path: no CSP header, only the common ones.
+  assert.equal(forPath('/no-such-page').get('content-security-policy'), undefined);
+  assert.equal(forPath('/no-such-page').get('x-content-type-options'), 'nosniff');
+  // Root-relative links, because a host serves the page at any depth.
+  const html = read('404.html');
+  assert.match(html, /href="\/404\.css"/);
+  assert.match(html, /<a href="\/">/);
 });
 
 test('the browser check pages get the app CSP plus frame-src \'self\' only (ui-flow.html frames index.html)', () => {
@@ -33,14 +48,14 @@ test('the browser check pages get the app CSP plus frame-src \'self\' only (ui-f
 });
 
 test('each HTML page matches exactly one CSP rule (the host would enforce two CSP headers together)', () => {
-  for (const p of [...appPaths, ...testPaths]) {
+  for (const p of [...appPaths, ...notFoundPaths, ...testPaths]) {
     const n = rules.filter((r) => headersFor([r], p).has('content-security-policy')).length;
     assert.equal(n, 1, p);
   }
 });
 
 test('every CSP stays strict: no inline or eval sources, no remote origins', () => {
-  for (const p of [...appPaths, ...testPaths]) {
+  for (const p of [...appPaths, ...notFoundPaths, ...testPaths]) {
     const csp = forPath(p).get('content-security-policy');
     assert.match(csp, /default-src 'none'/, p);
     assert.doesNotMatch(csp, /unsafe-|https?:|\*|blob:/, p);
@@ -48,7 +63,7 @@ test('every CSP stays strict: no inline or eval sources, no remote origins', () 
 });
 
 test('every path gets the security and cache headers', () => {
-  for (const p of ['/', '/index.html', '/src/main.js', '/styles.css', '/tests/browser/ui-flow.html']) {
+  for (const p of ['/', '/index.html', '/src/main.js', '/styles.css', '/tests/browser/ui-flow.html', '/404.html', '/404.css', '/no-such-page']) {
     const h = forPath(p);
     assert.equal(h.get('x-content-type-options'), 'nosniff', p);
     assert.equal(h.get('referrer-policy'), 'no-referrer', p);
@@ -63,7 +78,7 @@ test('the _headers file stays within the host limits', () => {
 });
 
 test('no shipped HTML page uses inline scripts or styles (the CSP would block them)', () => {
-  const pages = ['index.html', ...testPages.map((f) => `tests/browser/${f}`)];
+  const pages = ['index.html', '404.html', ...testPages.map((f) => `tests/browser/${f}`)];
   for (const p of pages) {
     const html = read(p);
     assert.doesNotMatch(html, /<style[\s>]/i, `${p}: <style> block`);

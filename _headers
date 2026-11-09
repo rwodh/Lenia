@@ -4,6 +4,8 @@
 #  - the app: the meta CSP of index.html plus frame-ancestors, which a meta tag cannot set. 'self', not 'none', because
 #    tests/browser/ui-flow.html drives index.html in a same-origin iframe. The unit test fails if this and the meta CSP drift.
 #  - the browser check pages: the same policy plus frame-src 'self' (ui-flow.html frames index.html).
+#  - the not-found page (404.html): the app policy, for a direct request. A host serves 404.html at an unknown path, where
+#    no path rule matches; its own meta CSP (the app's) applies there.
 # no-cache = revalidate on every load, so a page never combines ES modules from two deployments (the modules are unhashed).
 /*
   X-Content-Type-Options: nosniff
@@ -15,6 +17,12 @@
   Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
 
 /index.html
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+
+/404.html
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
+
+/404
   Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'
 
 /tests/browser/*

@@ -49,9 +49,12 @@ vec3 observatory(float v) {
   return c;
 }
 
+// c >= -1: inside the drawn square pos = uv * n + uOffset with uv in [0, 1) and uOffset in [0, n) (viewUniforms), so the
+// bilinear footprint starts at floor(pos - 0.5) >= -1. c + n is then >= n - 1 >= 0, and both operands of % are non-negative
+// (GLSL ES leaves % undefined for a negative operand). Same index as the old ((c % n) + n) % n wherever that was defined.
 float cell(ivec2 c) {
   ivec2 n = ivec2(uGridSize);
-  return texelFetch(uState, ((c % n) + n) % n, 0).r;
+  return texelFetch(uState, (c + n) % n, 0).r;
 }
 
 // Bilinear sample at a position in cell units (cell centres at +0.5), periodic.
@@ -63,9 +66,9 @@ float sampleState(vec2 pos) {
              mix(cell(i0 + ivec2(0, 1)), cell(i0 + ivec2(1, 1)), f.x), f.y);
 }
 
-float overlayCell(ivec2 c) {
+float overlayCell(ivec2 c) { // same index range and reasoning as cell()
   ivec2 n = ivec2(uGridSize);
-  return texelFetch(uOverlay, ((c % n) + n) % n, 0).r;
+  return texelFetch(uOverlay, (c + n) % n, 0).r;
 }
 
 // Same bilinear, periodic sampling as sampleState, from the overlay texture.

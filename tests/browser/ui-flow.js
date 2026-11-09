@@ -148,6 +148,82 @@ try {
     }
   }
 
+  // ---------- context-loss guards: actions while the context is lost or after a failed restore (decision 33) ----------
+  // Fault injection happens only in this test page's frame (a patched createShader, a deliberate GL error). Each check
+  // failed on the code before the guards (see the M1 report): an uncaught exception or a misleading message, an overlay
+  // switched off, a GL error left by Reset after a failed restore, an error panel that never went away, float16 after it.
+  P = await load('');
+  {
+    const A = P.app, c = A.canvas;
+    const ext = A.sim.gl.getExtension('WEBGL_lose_context');
+    if (!ext) {
+      log('info  context-loss guard checks not applicable: WEBGL_lose_context unavailable', 'info');
+    } else {
+      const first = A.caps.stateFormat.name;
+      const note = () => P.$('[data-hud=note]').textContent;
+      const errors = [];
+      P.w.addEventListener('error', (e) => errors.push(e.message));
+      P.w.addEventListener('unhandledrejection', (e) => errors.push(String(e.reason)));
+      const lose = async () => { ext.loseContext(); await until(() => !A.running && A.gpuLost, 'context lost', 10000); };
+      const restore = async (old) => { ext.restoreContext(); await until(() => A.sim !== old && A.running, 'context restore', 30000); };
+      const r = c.getBoundingClientRect(), tx = Math.round(r.left + r.width / 2), ty = Math.round(r.top + r.height / 2);
+      const tap = () => {
+        for (const t of ['pointerdown', 'pointerup']) {
+          c.dispatchEvent(new P.w.PointerEvent(t, { clientX: tx, clientY: ty, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, bubbles: true, cancelable: true }));
+        }
+      };
+      A.pause();
+
+      // Add while lost: the click path (ViewControls -> addAt) refuses with a plain message; nothing is added, nothing throws.
+      P.click('#btn-add');
+      let old = A.sim;
+      await lose();
+      tap();
+      await sleep(100);
+      check('context lost: a click with Add armed is refused with a "graphics context" message, no uncaught error',
+        A.additions.length === 0 && !A.adding && /graphics context/i.test(note()) && /added again/i.test(note()) && errors.length === 0,
+        `note="${note()}" errors=${JSON.stringify(errors)}`);
+
+      // Overlay on and an organism switch while lost: kept as the user's choice and applied by the restore.
+      P.d.querySelectorAll('#seg-aid .seg-btn')[1].click(); // Trails
+      P.d.querySelectorAll('#seg-pattern button')[1].click(); // O2b
+      await restore(old);
+      check('context lost: switching an overlay on is kept and the overlay exists after the restore (no "unavailable" note)',
+        A.visualMode === 'trails' && A.overlay !== null && !/unavailable|compile/i.test(note()), `mode=${A.visualMode} note="${note()}"`);
+      check('context lost: an organism switch is applied by the restore (exact O2b seed, O2b parameters, generation 0)',
+        A.patternId === 'O2b' && diffMax(A.sim.readState(), seedOf('O2b')) === 0 && A.params.sigma === 0.014 && A.sim.generation === 0);
+      A.setVisualMode('off');
+
+      // A restore that fails (createShader patched to return null in this frame): the panel shows and the loop stops; Reset and
+      // the R key then must not touch the stale GPU objects (they used to leave INVALID_OPERATION on the live context).
+      const proto = P.w.WebGL2RenderingContext.prototype, createShader = proto.createShader;
+      old = A.sim;
+      await lose();
+      proto.createShader = () => null;
+      ext.restoreContext();
+      await until(() => !P.$('#fatal').hidden, 'error panel after a failed restore', 10000);
+      proto.createShader = createShader;
+      const gl = A.sim.gl;
+      P.d.body.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: 'r', code: 'KeyR', bubbles: true, cancelable: true }));
+      P.click('#btn-reset');
+      const leftover = gl.getError();
+      check('failed restore: the error panel shows, the loop stops, and Reset / R leave no GL error on the context',
+        !P.$('#fatal').hidden && !A.running && leftover === gl.NO_ERROR, `getError=${leftover}`);
+
+      // Recovery, with a stale error deliberately left on the context: the probe drain keeps float32, the panel is hidden.
+      gl.bindBuffer(0x1234, null); // INVALID_ENUM, left in the error queue on purpose
+      await lose();
+      await sleep(100);
+      await restore(old);
+      check('recovery after a failed restore: the error panel is hidden and the app runs again',
+        P.$('#fatal').hidden && A.running && A.gpuReady, `fatal hidden=${P.$('#fatal').hidden}`);
+      check('recovery: a GL error left on the context before the restore does not change the state format (probe drain)',
+        A.caps.stateFormat.name === first, `before=${first} after=${A.caps.stateFormat.name}`);
+      check('context-loss guards: no uncaught error in the whole block; no GL error now', errors.length === 0 && A.sim.gl.getError() === A.sim.gl.NO_ERROR,
+        JSON.stringify(errors));
+    }
+  }
+
   // ---------- organism library: selection, Reset, repeated switching, context restore ----------
   P = await load('');
   {
@@ -406,16 +482,28 @@ try {
     check('World View: zooming and panning never change the simulation state (paused: same generation, identical state)',
       A.sim.generation === gHeld && diffMax(A.sim.readState(), held) === 0);
     P.click('#btn-reset');
-    check('World View: Reset keeps the view', A.view.cx === v.cx && A.view.zoom === v.zoom);
+    check('World View: Reset keeps the view', A.view.cx === v.cx && A.view.cy === v.cy && A.view.zoom === v.zoom);
     P.d.querySelectorAll('#seg-pattern button')[1].click();
-    check('World View: a pattern switch keeps the view', A.view.cx === v.cx && A.view.zoom === v.zoom);
+    check('World View: a pattern switch keeps the view', A.view.cx === v.cx && A.view.cy === v.cy && A.view.zoom === v.zoom);
     P.d.querySelectorAll('#seg-pattern button')[0].click();
     const ext = A.sim.gl.getExtension('WEBGL_lose_context');
     if (ext) {
-      const old = A.sim;
-      ext.loseContext(); await sleep(300); ext.restoreContext();
-      await until(() => A.sim !== old && A.running, 'context restore', 30000);
-      check('World View: a context restore keeps the view', A.view.cx === v.cx && A.view.cy === v.cy && A.view.zoom === v.zoom);
+      // The restore takes a few hundred ms, during which real input (a wheel over the window, a key press) could reach the app
+      // and move the view; this check is about the restore, so real input is held off for the wait. Events the test itself
+      // dispatches are untrusted and unaffected. The assertion is unchanged: the full view must be exactly as before.
+      const blockReal = (e) => { if (e.isTrusted) { e.stopImmediatePropagation(); e.preventDefault(); } };
+      const realTypes = ['pointerdown', 'pointermove', 'pointerup', 'wheel', 'keydown', 'mousedown', 'touchstart', 'touchmove'];
+      for (const t of realTypes) P.w.addEventListener(t, blockReal, { capture: true, passive: false });
+      frame.style.pointerEvents = 'none';
+      try {
+        const old = A.sim;
+        ext.loseContext(); await sleep(300); ext.restoreContext();
+        await until(() => A.sim !== old && A.running, 'context restore', 30000);
+        check('World View: a context restore keeps the view', A.view.cx === v.cx && A.view.cy === v.cy && A.view.zoom === v.zoom);
+      } finally {
+        for (const t of realTypes) P.w.removeEventListener(t, blockReal, { capture: true });
+        frame.style.pointerEvents = '';
+      }
     }
     P.click('[data-view-action=reset]');
     check('World View: Reset view (button) returns to the whole world', A.view.zoom === 1 && A.view.cx === n / 2 && A.view.cy === n / 2);
