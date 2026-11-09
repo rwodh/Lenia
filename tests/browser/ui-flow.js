@@ -1,11 +1,12 @@
 // Integration check of the real page: explorer controls (play/pause/step/reset/params/speed/palette), single animation
 // loop, and the Guided Discovery tour including its first-visit memory. Uses only the page's own DOM and the ?debug hook.
-import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY, VIEW, ADDITIONS } from '../../src/config.js';
+import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY, VIEW, ADDITIONS, LOOP } from '../../src/config.js';
 import { bufferToWorld } from '../../src/render/view-math.js';
 import { computeObservables } from '../../src/simulation/observables.js';
 import { getPattern } from '../../src/simulation/patterns.js';
 import { decodeRle } from '../../src/simulation/rle.js';
 import { placePatternCentred, placePatternAt, stampMax } from '../../src/simulation/seed.js';
+import { GPU_BOUND_START } from '../../src/simulation/scheduler.js';
 
 /** The exact initial state a library pattern must put on the GPU (page grid is 64). */
 const seedOf = (id, n = 64) => placePatternCentred(n, decodeRle(getPattern(id).rle));
@@ -35,7 +36,10 @@ async function load(query) {
   w.requestAnimationFrame = (cb) => { const id = raf((t) => { ids.delete(id); probe.pending--; cb(t); }); ids.add(id); probe.pending++; return id; };
   w.cancelAnimationFrame = (id) => { if (ids.delete(id)) probe.pending--; caf(id); };
   setInterval(() => { probe.max = Math.max(probe.max, probe.pending); }, 40);
-  return { w, d, app: w.leniaApp, probe, $: (s) => d.querySelector(s), click: (s) => d.querySelector(s).click() };
+  // open(name): opens the floating panel that holds a control before a check that needs it on screen (the controls live in
+  // panels since M2; a check that only clicks a control works on a closed panel too, as before).
+  const open = (name) => w.leniaUi.panels.open(name);
+  return { w, d, app: w.leniaApp, probe, open, $: (s) => d.querySelector(s), click: (s) => d.querySelector(s).click() };
 }
 const sum = (a) => { let s = 0; for (const v of a) s += v; return s; };
 
@@ -357,17 +361,46 @@ try {
     let requests = 0;
     const realRequest = A.readback.request.bind(A.readback);
     A.readback.request = (...args) => { requests++; return realRequest(...args); };
-    // Hold the loop in its GPU-limited state. Setting the flag alone is not enough: a frame the fence really holds back resets
-    // cleanFrames, and the loop recovers 60 frames later.
+    // Hold the loop in its GPU-limited state. Setting the flag alone is not enough: the loop recomputes it every frame.
     Object.defineProperty(A, 'gpuBound', { get: () => true, set: () => {}, configurable: true });
     const gB = A.sim.generation;
     await sleep(2000);
     check('Observatory: no readback is requested while the GPU is behind (the simulation keeps running)', requests === 0 && A.sim.generation > gB, `requests=${requests} generation ${gB} -> ${A.sim.generation}`);
     delete A.gpuBound;
-    A.gpuBound = false; A.cleanFrames = 0;
+    A.gpuBound = false; A.gpuState = GPU_BOUND_START;
     await until(() => requests > 0, 'sampling resumes after the GPU catches up');
     check('Observatory: sampling resumes when the GPU catches up', requests > 0);
     A.readback.request = realRequest;
+
+    // The flag rule (decision 7), driven by the fence itself (canSubmit refuses; nothing else is stubbed). Hold-backs alone do not
+    // set the flag while the simulation keeps up; a hold-back long enough for the simulation to fall behind does, and the badge
+    // shows; the flag stays on through the recovery window and clears once the fence has held nothing back for that long.
+    const realCanSubmit = A.fence.canSubmit.bind(A.fence);
+    const badge = P.d.querySelector('[data-hud="gpu-badge"]');
+    if (A.paused) P.click('#btn-play');
+    let refusals = 2;
+    A.fence.canSubmit = () => (refusals-- > 0 ? false : realCanSubmit());
+    await until(() => refusals < -2, 'two held-back frames');
+    check('GPU-limited: two held-back frames in a row do not set the flag', A.gpuBound === false && badge.hidden, `gpuBound=${A.gpuBound}`);
+    let calls = 0, everOn = false;
+    A.fence.canSubmit = () => { everOn ||= A.gpuBound; return calls++ % 3 === 0 ? false : realCanSubmit(); };
+    await sleep(LOOP.gpuBoundWindowMs * 1.5);
+    A.fence.canSubmit = realCanSubmit;
+    check('GPU-limited: every third frame held back, the simulation keeping up: the flag stays off', !everOn && A.gpuBound === false,
+      `held ${Math.ceil(calls / 3)} of ${calls} frames, flag seen ${everOn}`);
+    const gHold = A.sim.generation;
+    A.fence.canSubmit = () => false;
+    await sleep(400);
+    const flagged = A.gpuBound, behind = A.sim.generation === gHold;
+    await until(() => !badge.hidden, 'the GPU-limited badge');
+    check('GPU-limited: a hold-back long enough for the simulation to fall behind sets the flag and shows the badge',
+      flagged === true && behind && !badge.hidden, `gpuBound=${flagged}`);
+    A.fence.canSubmit = realCanSubmit;
+    await sleep(LOOP.gpuBoundRecoveryMs * 0.3);
+    check('GPU-limited: the flag stays on during the recovery window', A.gpuBound === true);
+    await until(() => A.gpuBound === false, 'the flag to clear', 10000);
+    await until(() => badge.hidden, 'the badge to hide');
+    check('GPU-limited: the flag clears and the badge hides once frames are submitted again', A.gpuBound === false && badge.hidden);
 
     // context loss and restore: unavailable while lost, history cleared, sampling resumes on the new context
     A.history.length > 0 || await until(() => A.history.length > 0, 'history before loss');
@@ -395,6 +428,7 @@ try {
     // narrow layout: no horizontal overflow; the chart fits its card
     const frameWidth = frame.style.width;
     frame.style.width = '390px';
+    P.open('observatory'); // the chart lives in the Observatory panel (a bottom sheet at this width)
     await sleep(800);
     const root = P.d.documentElement, chart = P.$('[data-obs=chart]'), card = P.$('#card-observatory');
     check('Observatory: no horizontal overflow at 390 px; the chart fits its card',
@@ -680,7 +714,7 @@ try {
     await sleep(1500);
     const dg = A.sim.generation - gB, ds = A.overlay.steps - sB;
     A.renderer.draw = realDraw;
-    delete A.gpuBound; A.gpuBound = false; A.cleanFrames = 0;
+    delete A.gpuBound; A.gpuBound = false; A.gpuState = GPU_BOUND_START;
     check('aid: while GPU-limited the loop still takes at most one step per drawn frame, and accumulates once per step',
       dg > 0 && dg <= frames && ds === dg, `generations ${dg}, frames ${frames}, accumulation passes ${ds}`);
 
@@ -800,6 +834,162 @@ try {
     check('add: one animation loop and no GL error', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR, `max pending rAF callbacks = ${P.probe.max}`);
   }
 
+  // ---------- M2 floating interface: panels, keyboard, tooltips, Hide-UI, surround, narrow layout ----------
+  P = await load('');
+  {
+    const A = P.app, c = A.canvas, d = P.d;
+    const rect = (el) => el.getBoundingClientRect();
+    const onScreen = (el) => !!el && el.getClientRects().length > 0 && !el.closest('[hidden]') && !el.closest('[inert]');
+    const overlaps = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    const bar = P.$('#card-transport');
+    const railBtn = (name) => P.$(`.rail [data-panel=${name}]`);
+    const key = (k, target = d.body) => target.dispatchEvent(new P.w.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    const panels = [...d.querySelectorAll('.panel')];
+    check('M2: the world fills the viewport; every panel starts closed; rails, transport bar and view tools are on screen',
+      Math.abs(rect(c).width - P.w.innerWidth) < 1 && Math.abs(rect(c).height - P.w.innerHeight) < 1 && panels.every((p) => p.hidden)
+      && onScreen(P.$('.rail-left')) && onScreen(P.$('.rail-right')) && onScreen(bar) && onScreen(P.$('.view-tools')),
+      `canvas ${rect(c).width}x${rect(c).height} viewport ${P.w.innerWidth}x${P.w.innerHeight}`);
+
+    // Every control is reachable from its panel by mouse (the rail button opens it, the control is then on screen) and by
+    // keyboard (the rail button and each enabled control are focusable).
+    const owned = {
+      organism: ['#seg-pattern button', '#btn-place', '#btn-add', '#btn-centre'],
+      view: ['#seg-aid .seg-btn', '#seg-colour .seg-btn', '#seg-surround .seg-btn', '#seg-panels .seg-btn'],
+      help: ['#tour-open'],
+      params: ['#p-mu', '#p-sigma', '#p-timeSteps'],
+      observatory: ['[data-obs=chart]', '[data-obs=mass]'],
+      status: ['[data-hud=render]', '[data-hud=format]'],
+    };
+    const missing = [];
+    for (const [name, sels] of Object.entries(owned)) {
+      const btn = railBtn(name);
+      btn.click();
+      const panel = P.$(`#card-${name}`);
+      if (!onScreen(panel) || btn.getAttribute('aria-expanded') !== 'true' || btn.getAttribute('aria-controls') !== panel.id) missing.push(`${name}: panel`);
+      if (overlaps(rect(panel), rect(bar))) missing.push(`${name}: covers the transport bar`);
+      for (const s of sels) {
+        for (const el of d.querySelectorAll(s)) {
+          if (!onScreen(el)) missing.push(`${name}: ${s} not on screen`);
+          else if (el.matches('button, input, summary') && !el.disabled) { el.focus(); if (d.activeElement !== el) missing.push(`${name}: ${s} not focusable`); }
+        }
+      }
+      btn.focus();
+      if (d.activeElement !== btn) missing.push(`${name}: rail button not focusable`);
+    }
+    check('M2: every control is reachable from its panel by mouse and by keyboard; no panel covers the transport bar',
+      missing.length === 0, missing.slice(0, 6).join('; '));
+    P.w.leniaUi.panels.closeAll();
+
+    // One open panel per side; Esc closes the latest and returns focus to the button that opened it.
+    railBtn('organism').click();
+    railBtn('view').click();
+    railBtn('params').click();
+    check('M2: one open panel per side (opening View closes Organism; a right panel stays open beside it)',
+      P.$('#card-organism').hidden && !P.$('#card-view').hidden && !P.$('#card-params').hidden
+      && railBtn('organism').getAttribute('aria-expanded') === 'false');
+    railBtn('params').focus();
+    key('Escape');
+    check('M2: Esc closes the most recent panel and returns focus to its button',
+      P.$('#card-params').hidden && !P.$('#card-view').hidden && d.activeElement === railBtn('params'));
+    key('Escape');
+    check('M2: a second Esc closes the other panel', P.$('#card-view').hidden && d.activeElement === railBtn('view'));
+    P.click('#status-chip');
+    const chipOpens = !P.$('#card-status').hidden;
+    P.click('#btn-about');
+    check('M2: the status chip opens Status and the wordmark opens Help; the close button closes a panel',
+      chipOpens && !P.$('#card-help').hidden && (P.$('#card-help [data-panel-close]').click(), P.$('#card-help').hidden));
+    P.w.leniaUi.panels.closeAll();
+
+    // Tooltips (WCAG 1.4.13): shown on hover, referenced by aria-describedby, hoverable, dismissed by Esc without moving focus.
+    const tip = P.$('#tooltip'), tb = railBtn('observatory');
+    tb.dispatchEvent(new P.w.PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    await sleep(500);
+    const shown = !tip.hidden && tip.textContent === 'Observatory' && tb.getAttribute('aria-describedby') === 'tooltip';
+    tb.dispatchEvent(new P.w.PointerEvent('pointerleave', { pointerType: 'mouse' }));
+    tip.dispatchEvent(new P.w.PointerEvent('pointerenter', { pointerType: 'mouse' }));
+    await sleep(400);
+    const hoverable = !tip.hidden;
+    const focused = d.activeElement;
+    key('Escape');
+    check('M2: a tooltip names the control on hover, stays while the pointer moves onto it, and Esc dismisses it without moving focus',
+      shown && hoverable && tip.hidden && !tb.hasAttribute('aria-describedby') && d.activeElement === focused,
+      `shown=${shown} hoverable=${hoverable} hiddenAfterEsc=${tip.hidden}`);
+    tip.dispatchEvent(new P.w.PointerEvent('pointerleave', { pointerType: 'mouse' }));
+
+    // Hide-UI: H hides all floating interface except a Show UI button; the world keeps running; H or the button shows it again.
+    const g0 = A.sim.generation;
+    A.play();
+    key('h');
+    await sleep(300);
+    const hidden = P.$('#app').dataset.ui === 'hidden' && !onScreen(P.$('.rail-left')) && !onScreen(bar) && onScreen(P.$('#btn-show-ui'));
+    check('M2: H hides the interface except "Show UI"; the world keeps running', hidden && A.sim.generation > g0);
+    P.click('#btn-show-ui');
+    check('M2: "Show UI" brings the interface back', P.$('#app').dataset.ui === 'shown' && onScreen(bar) && P.$('#btn-show-ui').hidden);
+    key('h'); key('h');
+    check('M2: H toggles back as well', P.$('#app').dataset.ui === 'shown');
+
+    // Notes: a toast that can be dismissed, unless the condition persists.
+    A.hud.setNote('A test note.');
+    const toast = P.$('[data-hud=toast]'), closeNote = P.$('[data-hud=note-close]');
+    const toastShown = onScreen(toast) && onScreen(closeNote);
+    closeNote.click();
+    const dismissed = toast.hidden;
+    A.hud.setNote('A lasting condition.', { persistent: true });
+    check('M2: notes show as a toast that can be dismissed; a persistent note has no close button',
+      toastShown && dismissed && onScreen(toast) && closeNote.hidden);
+    A.hud.setNote('');
+
+    // Glass / Solid.
+    P.open('view');
+    d.querySelectorAll('#seg-panels .seg-btn')[1].click();
+    const solid = P.$('#app').dataset.panels === 'solid' && A.panelStyle === 'solid' && P.w.getComputedStyle(P.$('#card-view')).backdropFilter === 'none';
+    d.querySelectorAll('#seg-panels .seg-btn')[0].click();
+    check('M2: Solid makes the panels opaque (no backdrop blur); Glass restores the default', solid && A.panelStyle === 'glass');
+
+    // Periodic surround: on by default; the pointer maps into it with wrapping, so Place works there; off restores the bars.
+    A.pause();
+    const r = rect(c), sideCss = Math.min(r.width, r.height);
+    const sqLeft = r.left + (r.width - sideCss) / 2;
+    const ox = Math.round(sqLeft - 0.3 * sideCss), oy = Math.round(r.top + r.height / 2); // left of the square
+    const toBuf = (x, y) => ({ px: (x - r.left) * (c.width / r.width), py: (r.bottom - y) * (c.height / r.height) });
+    const b0 = toBuf(ox, oy), b1 = toBuf(ox + sideCss, oy);
+    const outCell = A.cellAt(b0.px, b0.py), inCell = A.cellAt(b1.px, b1.py);
+    check('M2: the surround is on by default and the pointer maps into it with wrapping (same cell one period away)',
+      A.surround === true && !!outCell && !!inCell && outCell.x === inCell.x && outCell.y === inCell.y);
+    P.click('#btn-place');
+    for (const t of ['pointerdown', 'pointerup']) {
+      c.dispatchEvent(new P.w.PointerEvent(t, { clientX: ox, clientY: oy, pointerId: 1, pointerType: 'mouse', button: 0, buttons: 1, bubbles: true, cancelable: true }));
+    }
+    check('M2: Place works in the surround (the start cell is the wrapped cell)',
+      A.placement && A.placement.x === outCell.x && A.placement.y === outCell.y, `placement=${JSON.stringify(A.placement)} cell=${JSON.stringify(outCell)}`);
+    d.querySelectorAll('#seg-surround .seg-btn')[1].click();
+    check('M2: with the surround off, outside the square is background again (no cell under the pointer)',
+      A.surround === false && A.cellAt(b0.px, b0.py) === null);
+    d.querySelectorAll('#seg-surround .seg-btn')[0].click();
+    A.clearPlacement();
+    P.w.leniaUi.panels.closeAll();
+
+    // Narrow screens: one bottom toolbar, panels as bottom sheets one at a time, above the transport bar; no overflow.
+    const frameWidth = frame.style.width;
+    frame.style.width = '390px';
+    await sleep(600);
+    const left = rect(P.$('.rail-left')), right = rect(P.$('.rail-right')), barN = rect(bar);
+    const toolbar = left.top > barN.bottom - 1 && right.top > barN.bottom - 1 && Math.abs(left.top - right.top) < 1;
+    railBtn('params').click();
+    railBtn('organism').click();
+    const sheet = P.$('#card-organism'), sheetR = rect(sheet), root = d.documentElement;
+    check('M2: narrow (390 px): one bottom toolbar below the transport bar; one sheet at a time, above the transport bar; no overflow',
+      toolbar && P.$('#card-params').hidden && onScreen(sheet) && !overlaps(sheetR, barN) && sheetR.bottom <= barN.top
+      && root.scrollWidth <= root.clientWidth && P.w.getComputedStyle(sheet.querySelector('.panel-body')).overflowY === 'auto',
+      `toolbar=${toolbar} sheet ${Math.round(sheetR.top)}..${Math.round(sheetR.bottom)} bar ${Math.round(barN.top)}..${Math.round(barN.bottom)} scrollWidth=${root.scrollWidth}`);
+    check('M2: narrow: touch-action is limited to the canvas', P.w.getComputedStyle(c).touchAction === 'none'
+      && P.w.getComputedStyle(sheet).touchAction !== 'none' && P.w.getComputedStyle(d.body).touchAction !== 'none');
+    P.w.leniaUi.panels.closeAll();
+    frame.style.width = frameWidth;
+    await sleep(300);
+    check('M2: one animation loop and no GL error after the interface checks', P.probe.max <= 1 && A.sim.gl.getError() === A.sim.gl.NO_ERROR);
+  }
+
   // ---------- returning visit: no auto tour; reopen works; experiment is interactive ----------
   P = await load('');
   check('returning visit: tour does not auto-open', P.$('#tour').hidden);
@@ -818,12 +1008,18 @@ try {
   check('controls step highlights the real control card', P.$('#card-transport').classList.contains('spot') && P.$('#tour').dataset.modal === 'false' && P.$('#app').inert === false);
   P.click('[data-tour-step=controls] [data-tour-action=next]');
   check('parameters step highlights the parameter card', P.$('#card-params').classList.contains('spot'));
+  const paramsBtn = P.$('.rail [data-panel=params]');
+  check('parameters step opens the Parameters panel (on screen, its button expanded)',
+    !P.$('#card-params').hidden && P.$('#card-params').getClientRects().length > 0 && paramsBtn.getAttribute('aria-expanded') === 'true');
   P.click('[data-tour-step=params] [data-tour-action=next]');
+  check('observe step closes the Parameters panel again (the transport bar is what it talks about)', P.$('#card-params').hidden);
   check('observe step: resets, plays, Next locked until enough steps', !step('observe').hidden && !P.app.paused && next('observe').disabled);
   await until(() => !next('observe').disabled, 'observe gate');
   check('observe step: Next unlocks after the observation', P.app.sim.generation >= EXPERIMENT.observeSteps, `generation=${P.app.sim.generation}`);
   P.click('[data-tour-step=observe] [data-tour-action=next]');
   check('change step: simulation paused, sigma slider highlighted, Next locked', P.app.paused && P.$('[data-param=sigma]').classList.contains('spot') && next('change').disabled);
+  check('change step: the Parameters panel is open and the sigma slider is on screen',
+    !P.$('#card-params').hidden && P.$('#p-sigma').getBoundingClientRect().height > 0);
   const s5 = P.$('#p-sigma'); s5.value = '0.013'; s5.dispatchEvent(new P.w.Event('input', { bubbles: true }));
   await sleep(300);
   check('change step: a wrong value does not unlock Next', next('change').disabled);
@@ -843,6 +1039,7 @@ try {
   check('Enter Explorer: tour closed, running, organism and sigma restored (same page, no reload)',
     P.$('#tour').hidden && !P.app.paused && P.app.params.sigma === 0.015 && sum(restored) > 60 && P.$('#app').inert === false, `mass=${sum(restored).toFixed(2)}`);
   check('no WebGL errors through the tour', P.app.sim.gl.getError() === P.app.sim.gl.NO_ERROR);
+  check('leaving the tour closes every panel', [...P.d.querySelectorAll('.panel')].every((p) => p.hidden));
   check('the tour started from O2b ends with O2u selected and the selector usable again',
     P.app.patternId === 'O2u' && [...P.d.querySelectorAll('#seg-pattern button')].every((b) => !b.disabled)
     && P.d.querySelectorAll('#seg-pattern button')[0].getAttribute('aria-pressed') === 'true' && P.$('[data-hud=pattern]').textContent === 'Orbium unicaudatus (O2u)');

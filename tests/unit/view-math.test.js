@@ -88,6 +88,22 @@ test('panning moves the picture with the pointer', () => {
   assert.ok(close(after.x, before.x, 1e-9) && close(after.y, before.y, 1e-9), 'the dragged point stays under the pointer');
 });
 
+test('periodic surround: outside the main square the mapping wraps instead of returning null (decision 35)', () => {
+  const v = defaultView(N); // on 900 x 600 the main square spans x 150..750
+  assert.equal(bufferToWorld(v, N, W, H, 50, 300), null, 'without the surround: background');
+  assert.equal(cellAt(v, N, W, H, 50, 300), null);
+  const side = Math.min(W, H);
+  for (const [px, py] of [[50, 300], [10.5, 5.5], [899.5, 599.5], [140, 20]]) {
+    const out = cellAt(v, N, W, H, px, py, { surround: true });
+    // The same point one period (one square side) further in is inside the square and shows the same cell.
+    const inside = cellAt(v, N, W, H, px < 150 ? px + side : px > 750 ? px - side : px, py, { surround: true });
+    assert.deepEqual(out, inside, `(${px}, ${py})`);
+    assert.ok(out.x >= 0 && out.x < N && out.y >= 0 && out.y < N);
+  }
+  // Inside the square the option changes nothing.
+  assert.deepEqual(cellAt(v, N, W, H, 451, 299, { surround: true }), cellAt(v, N, W, H, 451, 299));
+});
+
 test('bad input is rejected: NaN, Infinity, zero or negative zoom factors leave the view unchanged', () => {
   const v = { cx: 10, cy: 20, zoom: 3 };
   for (const f of [NaN, Infinity, -Infinity, 0, -2]) assert.equal(zoomAt(v, N, W, H, 450, 300, f, MAX), v, `factor ${f}`);

@@ -4,6 +4,8 @@ import { Controls } from './ui/controls.js';
 import { Tour } from './ui/tour.js';
 import { Observatory } from './ui/observatory.js';
 import { ViewControls } from './ui/view-controls.js';
+import { Panels } from './ui/panels.js';
+import { Tooltips } from './ui/tooltips.js';
 import { showFatal, hideFatal } from './ui/fatal.js';
 import { safeLocalStorage } from './ui/storage.js';
 import { parseQueryParams } from './simulation/params.js';
@@ -46,10 +48,13 @@ if (app) {
   try {
     new Controls(app, document);
     new Observatory(app, document);
+    const panels = new Panels(document);
+    new Tooltips(document);
     // A click on the world (not a drag) chooses the organism's start cell while Place is armed, or adds a copy while Add is.
     new ViewControls(app, document, { onClick: (cell) => { if (app.placing) app.placeAt(cell); else if (app.adding) app.addAt(cell); } });
     // The guided experiment is written for Orbium; a URL that swaps it for noise gets the plain explorer.
-    const tour = new Tour(app, { available: orbium, storage: safeLocalStorage(window), document });
+    const tour = new Tour(app, { available: orbium, storage: safeLocalStorage(window), document, panels });
+    if (new URLSearchParams(location.search).has('debug')) window.leniaUi = { panels }; // tests open panels through it
     if (started) {
       if (new URLSearchParams(location.search).has('tour')) tour.open();
       else tour.maybeAutoStart();

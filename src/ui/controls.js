@@ -1,9 +1,10 @@
-import { SPEEDS, UI_RANGES, PALETTES, VISUAL, ADDITIONS } from '../config.js';
+import { SPEEDS, UI_RANGES, PALETTES, VISUAL, ADDITIONS, PANEL_STYLES } from '../config.js';
 import { PATTERN_LIBRARY, getPattern } from '../simulation/patterns.js';
 
 // The id 'observatory' is internal (shader uniform, tests); its label is 'Ocean' so it is not confused with the Observatory card.
 const PALETTE_LABELS = { observatory: 'Ocean', viridis: 'Viridis' };
 const AID_LABELS = { off: 'Off', trails: 'Trails', activity: 'Activity' };
+const PANEL_LABELS = { glass: 'Glass', solid: 'Solid' };
 // What each visualization aid shows. Both are derived from the state and drawn instead of it; neither changes the simulation.
 const AID_TEXT = {
   trails: 'Trails: each cell shows the highest value it has had recently; older values fade by this factor at every simulation step. Derived from the state, display only.',
@@ -49,6 +50,18 @@ export class Controls {
       root.getElementById('seg-colour'),
       PALETTES.map((id) => ({ id, label: PALETTE_LABELS[id] })),
       (id) => app.setPalette(id),
+    );
+
+    this.paintSurround = segmented(
+      root.getElementById('seg-surround'),
+      [{ id: 'on', label: 'On' }, { id: 'off', label: 'Off' }],
+      (id) => app.setSurround(id === 'on'),
+    );
+    this.appEl = root.getElementById('app');
+    this.paintPanels = segmented(
+      root.getElementById('seg-panels'),
+      PANEL_STYLES.map((id) => ({ id, label: PANEL_LABELS[id] })),
+      (id) => app.setPanelStyle(id),
     );
 
     this.paintAid = segmented(
@@ -138,6 +151,9 @@ export class Controls {
     this.stepBtn.title = snap.paused ? 'Advance exactly one step' : 'Pause first, then step';
     this.paintSpeed(snap.speedId);
     this.paintColour(snap.palette);
+    this.paintSurround(snap.surround ? 'on' : 'off');
+    this.paintPanels(snap.panelStyle);
+    if (this.appEl) this.appEl.dataset.panels = snap.panelStyle;
     this.renderAid(snap);
     for (const key of Object.keys(UI_RANGES)) {
       const v = snap.params[key];

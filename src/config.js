@@ -36,8 +36,14 @@ export const LOOP = Object.freeze({
    * (DECISIONS.md 7, docs/reports/2026-11-08-m1.md). Still a bound: at 60 Hz, 3 frames is 50 ms of queued work.
    */
   maxFramesInFlight: 3,
-  /** Consecutive un-throttled frames before the loop stops considering itself GPU-bound. */
-  gpuBoundRecoveryFrames: 60,
+  /**
+   * GPU-limited flag (owner decision, 9 Nov 2026; nextGpuBound in src/simulation/scheduler.js; DECISIONS.md 7): ON when the
+   * simulation achieved fewer than gpuBoundOnRatio of the requested steps over the last ~gpuBoundWindowMs and the frame fence held
+   * a frame back in that window; OFF once the fence has held nothing back for gpuBoundRecoveryMs, whatever the step rate.
+   */
+  gpuBoundWindowMs: 1000,
+  gpuBoundOnRatio: 0.9,
+  gpuBoundRecoveryMs: 1000,
   hudIntervalMs: 250,
 });
 
@@ -119,6 +125,16 @@ export const VISUAL = Object.freeze({
 /** Phase 4b: organisms added to a running world (copies of the selected one). Reset removes them; the cap bounds the
  *  Observatory markers, the label and test time. */
 export const ADDITIONS = Object.freeze({ max: 8 });
+
+/**
+ * Periodic surround (display only; decision 35): outside the main square (one world period) the view shows the wrapped
+ * continuation of the world at `dim` brightness, with a faint 1 px line at every period boundary (`line` = how far the line
+ * colour is mixed towards white). Off: the old background bars. The main square itself is drawn exactly as without it.
+ */
+export const SURROUND = Object.freeze({ default: true, dim: 0.45, line: 0.25 });
+
+/** Floating panels: translucent "glass" or opaque "solid" (also used when blur is unsupported or reduced transparency is asked). */
+export const PANEL_STYLES = Object.freeze(['glass', 'solid']);
 
 export const PALETTES = Object.freeze(['observatory', 'viridis']);
 export const TOUR_STORAGE_KEY = 'lenia.tour.v1';

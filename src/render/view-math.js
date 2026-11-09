@@ -19,19 +19,22 @@ export const defaultView = (n) => ({ cx: n / 2, cy: n / 2, zoom: 1 });
 const wrap = (v, n) => ((v % n) + n) % n;
 const finite = (...xs) => xs.every(Number.isFinite);
 
-/** World position (cells, continuous, not wrapped) under buffer pixel (px, py), or null outside the drawn period. */
-export function bufferToWorld(view, n, width, height, px, py) {
+/**
+ * World position (cells, continuous, not wrapped) under buffer pixel (px, py). Outside the main period it is null, unless
+ * `surround` is set: the periodic surround (decision 35) draws the wrapped continuation there, so the same formula applies.
+ */
+export function bufferToWorld(view, n, width, height, px, py, { surround = false } = {}) {
   const s = Math.min(width, height) * view.zoom;
   const u = (px - width / 2) / s + 0.5;
   const v = (py - height / 2) / s + 0.5;
-  if (u < 0 || u >= 1 || v < 0 || v >= 1) return null;
+  if (!surround && (u < 0 || u >= 1 || v < 0 || v >= 1)) return null;
   return { x: u * n + (view.cx - n / 2), y: v * n + (view.cy - n / 2) };
 }
 
-/** The cell { x, y } (integers in [0, n)) under buffer pixel (px, py), or null outside the drawn period. */
-export function cellAt(view, n, width, height, px, py) {
+/** The cell { x, y } (integers in [0, n)) under buffer pixel (px, py); null outside the drawn period without the surround. */
+export function cellAt(view, n, width, height, px, py, options = {}) {
   if (!finite(px, py)) return null;
-  const w = bufferToWorld(view, n, width, height, px, py);
+  const w = bufferToWorld(view, n, width, height, px, py, options);
   return w && { x: wrap(Math.floor(w.x), n), y: wrap(Math.floor(w.y), n) };
 }
 
