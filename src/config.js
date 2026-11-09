@@ -36,8 +36,14 @@ export const LOOP = Object.freeze({
    * (DECISIONS.md 7, docs/reports/2026-11-08-m1.md). Still a bound: at 60 Hz, 3 frames is 50 ms of queued work.
    */
   maxFramesInFlight: 3,
-  /** Consecutive un-throttled frames before the loop stops considering itself GPU-bound. */
-  gpuBoundRecoveryFrames: 60,
+  /**
+   * GPU-limited flag (owner decision, 9 Nov 2026; nextGpuBound in src/simulation/scheduler.js; DECISIONS.md 7): ON when the
+   * simulation achieved fewer than gpuBoundOnRatio of the requested steps over the last ~gpuBoundWindowMs and the frame fence held
+   * a frame back in that window; OFF once the fence has held nothing back for gpuBoundRecoveryMs, whatever the step rate.
+   */
+  gpuBoundWindowMs: 1000,
+  gpuBoundOnRatio: 0.9,
+  gpuBoundRecoveryMs: 1000,
   hudIntervalMs: 250,
 });
 

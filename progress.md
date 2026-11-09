@@ -10,7 +10,7 @@ Architecture is in `README.md`; design decisions are in `DECISIONS.md`.
 | 2 Core Lenia | Done: GPU Lenia step, and the verified Orbium (O2u) seed is shown at startup (the selectable library is listed under Phase 3) |
 | 3 Interaction | Partial: Play/Pause, Step, Reset, speed, live mu/sigma/T, Guided Discovery tour, a two-organism library (O2u, O2b) with a selector, World View zoom and pan (display only, decision 28), start-cell placement of the selected organism (decision 29). Not done: more patterns, adding copies of the selected organism to a running world (decision 31) |
 | 4 Visualization | Partial: a full-screen floating interface (decision 36), a periodic surround around the world (decision 35), two colour maps (Ocean, Viridis), Running/Paused indicator, generation, pattern, world, render rate, and the read-only Observatory card (mass, active area, centroid, mass-by-generation chart), and two display-only aids: trails and an activity map (decision 30). No speed estimate |
-| 5 Quality | Partial: 123 unit tests, three browser GPU/UI pages, context-loss fault injection, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
+| 5 Quality | Partial: 131 unit tests, three browser GPU/UI pages, context-loss fault injection, input limits, error paths, labelled controls and focus handling. No screen-reader test, no accessibility audit, no frame-rate or other performance calibration |
 | 6 Deployment | Partial: repository side prepared (`_headers` with the production headers, a local production-header and subpath mode, a CSP-equality unit test, a static `404.html`, `docs/DEPLOYMENT.md`); **not deployed**. The app is still static files (no build step) |
 | 7 Extensions | Not started |
 
@@ -179,20 +179,37 @@ outside the repo produced it.
     passes its gates. Text contrast on the glass panel is at least 5.56:1 even over white (muted text), computed. Cost (Reported):
     the full-viewport display pass takes 0.4 to 1.0 ms GPU time per frame (p50) at 1280 x 720 and 1440 x 900, the surround adds
     0.1 to 0.2 ms; the effect of backdrop blur on frame time was inconclusive on this machine.
+27. **GPU-limited flag rule (9 Nov 2026, owner decision; decision 7; in repo: `scheduler.test.js` 8 flag tests, `ui-flow.html`
+    "GPU-limited" checks; Chrome 156, temporary profile, normal window, background throttling off, renderer `ANGLE (AMD, AMD
+    Radeon(TM) Graphics (0x00001681) Direct3D11 vs_5_0 ps_5_0, D3D11)`).** Two held-back frames in a row, and every third frame
+    held back while the simulation keeps up, leave the flag off; holding every frame sets it and shows the badge; it stays on
+    through the recovery window and then clears. With the old rule in place (HEAD `app.js`) `ui-flow` fails exactly the first two
+    of these checks (186 pass, 2 fail). Live rows (Reported, scratchpad probe, 15 s each after 3 s warm-up; **the window ran at
+    60 Hz**, frame p50 16.7 ms):
+
+    | Row | Flag on | Frames held back | Achieved / requested steps/s |
+    |---|---|---|---|
+    | grid 128, 1x | 0 % | 0 % | 60.0 / 60 (1.00) |
+    | grid 512, 2x, back-off on | 91 % | 2 % | 63.0 / 120 (0.53) |
+    | grid 512, 2x, back-off forced off | 100 % | 62 % | 83.3 / 120 (0.69) |
+
+    With the back-off forced off the GPU cannot reach 2x (62 % of frames held back), so the flag is a true positive there; with it
+    on, the occasional hold-back keeps the flag on and the rate is the back-off's 1 step per frame.
 
 ## Unresolved or unverified
 - **The floating interface on real devices** (decision 36): touch was exercised with synthetic pointer events and an emulated
   390 x 844 phone only; no screen reader was used (the panels have `aria-expanded`/`aria-controls`, tooltips
   `aria-describedby`, the cell readout is `aria-live="off"`). Backdrop blur's cost on a slow GPU is unmeasured; whether to
   default to Solid there waits for a trustworthy GPU-limited flag (see below).
-- **The GPU-limited flag is mostly a false positive on a 144 Hz display** (Reported, scratchpad probe, 8 and 9 Nov 2026, the AMD
-  renderer above, Chrome 156 normal window). At grids 64 and 128 the GPU spends about 1 ms per frame (timer query, p50; p90 1.7 to
-  3.4 ms) of a 7 ms frame interval, but a frame fence signals 1 to 3 frames after submission (presentation latency, not load).
-  With `LOOP.maxFramesInFlight` = 2 frames were held back 40 to 64 % of the time and the simulation ran at 52 to 62 steps/s.
-  Raised to 3 on 9 Nov 2026 (owner decision): held back 12 to 33 %, 57 to 62 steps/s at grid 128, but the fences then signal a
-  frame later and the **flag is still on 23 to 63 %** (50 % at grid 64), so the Observatory still rarely samples. The flag counts
-  any single held-back frame; a rule that needs several held-back frames in a row (app.js only) is proposed and waits for the
-  owner. At grid 256 the flag is on throughout and the GPU's p90 frame time (8 ms) exceeds the 7 ms interval: real load.
+- **The GPU-limited flag at 144 Hz under the new rule is unmeasured** (decision 7, fact 27). Under the old rule (any held-back
+  frame) it was mostly a false positive on a 144 Hz display (Reported, scratchpad probe, 8 and 9 Nov 2026, the AMD renderer above,
+  Chrome 156 normal window): at grids 64 and 128 the GPU spends about 1 ms per frame (timer query, p50; p90 1.7 to 3.4 ms) of a 7 ms
+  frame interval, but a frame fence signals 1 to 3 frames after submission (presentation latency, not load). With
+  `LOOP.maxFramesInFlight` = 3 frames were held back 12 to 33 % at grid 128 at 57 to 62 steps/s, and the flag was on 23 to 63 %
+  (50 % at grid 64). The new rule (9 Nov 2026) needs a step deficit as well, so those rows should no longer set it, but the live
+  rows in fact 27 ran at 60 Hz, where grid 128 held back no frame at all; the 144 Hz case was not re-measured. Grid 256 looked like
+  real load (GPU p90 8 ms against a 7 ms interval). Also open: at grid 512 and 2x the 1-step back-off itself lowers the rate from
+  83 to 63 steps/s on this machine (fact 27); whether the back-off should allow more than 1 step is an owner decision.
 - **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
   or performance figure was taken (the built-in browser pane delivered animation frames at roughly 5 Hz while the pages ran, so
   such numbers would not mean anything), and the `maxTapsPerStep` cap (200M, an estimate) and 2x speed remain untested. A 512 grid

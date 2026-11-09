@@ -13,7 +13,7 @@ import { normalizeParams } from './simulation/params.js';
 import { planPattern } from './simulation/startup.js';
 import { getPattern } from './simulation/patterns.js';
 import { decodeRle } from './simulation/rle.js';
-import { planFrameSteps, MAX_PENDING_STEPS } from './simulation/scheduler.js';
+import { planFrameSteps, MAX_PENDING_STEPS, nextGpuBound, GPU_BOUND_START } from './simulation/scheduler.js';
 
 /**
  * Owns the GPU resources and the single animation loop. Parameters must already be
@@ -68,7 +68,7 @@ export class App {
     this.lastSubmitMs = 0;
     this.lastHudMs = 0;
     this.gpuBound = false;
-    this.cleanFrames = 0;
+    this.gpuState = GPU_BOUND_START; // the GPU-limited rule's state (nextGpuBound); gpuBound mirrors gpuState.gpuBound
     this.fence = null;
     this.gpuLost = false; // true between a context loss and the next initGpu()
     // True only while the GPU objects are usable: from a successful initGpu() until a context loss or a failure. While it is
@@ -499,7 +499,7 @@ export class App {
     this.lastSubmitMs = 0;
     this.accumulatorMs = 0;
     this.gpuBound = false;
-    this.cleanFrames = 0;
+    this.gpuState = GPU_BOUND_START;
     this.rafId = requestAnimationFrame(this.frame);
   }
 
@@ -528,14 +528,13 @@ export class App {
       if (!this.paused) this.accumulatorMs += dt;
       this.collectSample();
 
-      if (this.fence.canSubmit()) {
-        if (++this.cleanFrames >= LOOP.gpuBoundRecoveryFrames) this.gpuBound = false;
-        this.submitFrame(now);
-      } else {
-        // The GPU is still busy with earlier frames. Submitting more would only add latency.
-        this.gpuBound = true;
-        this.cleanFrames = 0;
-      }
+      // Back-pressure: while the GPU is still busy with earlier frames, this frame submits nothing (more would only add
+      // latency). The GPU-limited flag is separate: it needs the simulation to fall behind as well (nextGpuBound).
+      const held = !this.fence.canSubmit();
+      const steps = held ? 0 : this.submitFrame(now);
+      this.gpuState = nextGpuBound(this.gpuState, { now, playMs: this.paused ? 0 : dt, steps, stepsPerSecond: this.stepsPerSecond, held },
+        { windowMs: LOOP.gpuBoundWindowMs, onRatio: LOOP.gpuBoundOnRatio, recoveryMs: LOOP.gpuBoundRecoveryMs });
+      this.gpuBound = this.gpuState.gpuBound;
 
       if (now - this.lastHudMs >= LOOP.hudIntervalMs) {
         this.lastHudMs = now;
@@ -560,7 +559,7 @@ export class App {
     }
   }
 
-  /** Run the due simulation steps, draw, and fence the frame. */
+  /** Run the due simulation steps, draw, and fence the frame. Returns the number of steps run. */
   submitFrame(now) {
     // Fixed simulation rate, independent of display refresh. When GPU-bound, one step per
     // frame: the simulation slows down but the page stays responsive.
@@ -590,5 +589,6 @@ export class App {
       if (interval > 0) this.fps = this.fps ? this.fps * 0.9 + (1000 / interval) * 0.1 : 1000 / interval;
     }
     this.lastSubmitMs = now;
+    return plan.steps;
   }
 }

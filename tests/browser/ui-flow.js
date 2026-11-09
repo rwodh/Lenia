@@ -1,11 +1,12 @@
 // Integration check of the real page: explorer controls (play/pause/step/reset/params/speed/palette), single animation
 // loop, and the Guided Discovery tour including its first-visit memory. Uses only the page's own DOM and the ?debug hook.
-import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY, VIEW, ADDITIONS } from '../../src/config.js';
+import { TOUR_STORAGE_KEY, EXPERIMENT, OBSERVATORY, VIEW, ADDITIONS, LOOP } from '../../src/config.js';
 import { bufferToWorld } from '../../src/render/view-math.js';
 import { computeObservables } from '../../src/simulation/observables.js';
 import { getPattern } from '../../src/simulation/patterns.js';
 import { decodeRle } from '../../src/simulation/rle.js';
 import { placePatternCentred, placePatternAt, stampMax } from '../../src/simulation/seed.js';
+import { GPU_BOUND_START } from '../../src/simulation/scheduler.js';
 
 /** The exact initial state a library pattern must put on the GPU (page grid is 64). */
 const seedOf = (id, n = 64) => placePatternCentred(n, decodeRle(getPattern(id).rle));
@@ -360,17 +361,46 @@ try {
     let requests = 0;
     const realRequest = A.readback.request.bind(A.readback);
     A.readback.request = (...args) => { requests++; return realRequest(...args); };
-    // Hold the loop in its GPU-limited state. Setting the flag alone is not enough: a frame the fence really holds back resets
-    // cleanFrames, and the loop recovers 60 frames later.
+    // Hold the loop in its GPU-limited state. Setting the flag alone is not enough: the loop recomputes it every frame.
     Object.defineProperty(A, 'gpuBound', { get: () => true, set: () => {}, configurable: true });
     const gB = A.sim.generation;
     await sleep(2000);
     check('Observatory: no readback is requested while the GPU is behind (the simulation keeps running)', requests === 0 && A.sim.generation > gB, `requests=${requests} generation ${gB} -> ${A.sim.generation}`);
     delete A.gpuBound;
-    A.gpuBound = false; A.cleanFrames = 0;
+    A.gpuBound = false; A.gpuState = GPU_BOUND_START;
     await until(() => requests > 0, 'sampling resumes after the GPU catches up');
     check('Observatory: sampling resumes when the GPU catches up', requests > 0);
     A.readback.request = realRequest;
+
+    // The flag rule (decision 7), driven by the fence itself (canSubmit refuses; nothing else is stubbed). Hold-backs alone do not
+    // set the flag while the simulation keeps up; a hold-back long enough for the simulation to fall behind does, and the badge
+    // shows; the flag stays on through the recovery window and clears once the fence has held nothing back for that long.
+    const realCanSubmit = A.fence.canSubmit.bind(A.fence);
+    const badge = P.d.querySelector('[data-hud="gpu-badge"]');
+    if (A.paused) P.click('#btn-play');
+    let refusals = 2;
+    A.fence.canSubmit = () => (refusals-- > 0 ? false : realCanSubmit());
+    await until(() => refusals < -2, 'two held-back frames');
+    check('GPU-limited: two held-back frames in a row do not set the flag', A.gpuBound === false && badge.hidden, `gpuBound=${A.gpuBound}`);
+    let calls = 0, everOn = false;
+    A.fence.canSubmit = () => { everOn ||= A.gpuBound; return calls++ % 3 === 0 ? false : realCanSubmit(); };
+    await sleep(LOOP.gpuBoundWindowMs * 1.5);
+    A.fence.canSubmit = realCanSubmit;
+    check('GPU-limited: every third frame held back, the simulation keeping up: the flag stays off', !everOn && A.gpuBound === false,
+      `held ${Math.ceil(calls / 3)} of ${calls} frames, flag seen ${everOn}`);
+    const gHold = A.sim.generation;
+    A.fence.canSubmit = () => false;
+    await sleep(400);
+    const flagged = A.gpuBound, behind = A.sim.generation === gHold;
+    await until(() => !badge.hidden, 'the GPU-limited badge');
+    check('GPU-limited: a hold-back long enough for the simulation to fall behind sets the flag and shows the badge',
+      flagged === true && behind && !badge.hidden, `gpuBound=${flagged}`);
+    A.fence.canSubmit = realCanSubmit;
+    await sleep(LOOP.gpuBoundRecoveryMs * 0.3);
+    check('GPU-limited: the flag stays on during the recovery window', A.gpuBound === true);
+    await until(() => A.gpuBound === false, 'the flag to clear', 10000);
+    await until(() => badge.hidden, 'the badge to hide');
+    check('GPU-limited: the flag clears and the badge hides once frames are submitted again', A.gpuBound === false && badge.hidden);
 
     // context loss and restore: unavailable while lost, history cleared, sampling resumes on the new context
     A.history.length > 0 || await until(() => A.history.length > 0, 'history before loss');
@@ -684,7 +714,7 @@ try {
     await sleep(1500);
     const dg = A.sim.generation - gB, ds = A.overlay.steps - sB;
     A.renderer.draw = realDraw;
-    delete A.gpuBound; A.gpuBound = false; A.cleanFrames = 0;
+    delete A.gpuBound; A.gpuBound = false; A.gpuState = GPU_BOUND_START;
     check('aid: while GPU-limited the loop still takes at most one step per drawn frame, and accumulates once per step',
       dg > 0 && dg <= frames && ds === dg, `generations ${dg}, frames ${frames}, accumulation passes ${ds}`);
 
