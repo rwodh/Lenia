@@ -184,32 +184,36 @@ outside the repo produced it.
     Radeon(TM) Graphics (0x00001681) Direct3D11 vs_5_0 ps_5_0, D3D11)`).** Two held-back frames in a row, and every third frame
     held back while the simulation keeps up, leave the flag off; holding every frame sets it and shows the badge; it stays on
     through the recovery window and then clears. With the old rule in place (HEAD `app.js`) `ui-flow` fails exactly the first two
-    of these checks (186 pass, 2 fail). Live rows (Reported, scratchpad probe, 15 s each after 3 s warm-up; **the window ran at
-    60 Hz**, frame p50 16.7 ms):
+    of these checks (186 pass, 2 fail). Live rows (Reported, scratchpad probe, 15 s each after 3 s warm-up; refresh rate from
+    Windows `Win32_VideoController` and the measured frame p50; power from Windows `PowerStatus`; same renderer as above):
 
-    | Row | Flag on | Frames held back | Achieved / requested steps/s |
-    |---|---|---|---|
-    | grid 128, 1x | 0 % | 0 % | 60.0 / 60 (1.00) |
-    | grid 512, 2x, back-off on | 91 % | 2 % | 63.0 / 120 (0.53) |
-    | grid 512, 2x, back-off forced off | 100 % | 62 % | 83.3 / 120 (0.69) |
+    | Run | Refresh | Power | Row | Flag on | Frames held back | Achieved / requested steps/s |
+    |---|---|---|---|---|---|---|
+    | A | 60 Hz (frame p50 16.7 ms) | not recorded | grid 128, 1x | 0 % | 0 % | 60.0 / 60 (1.00) |
+    | A | 60 Hz | not recorded | grid 512, 2x, back-off on | 91 % | 2 % | 63.0 / 120 (0.53) |
+    | A | 60 Hz | not recorded | grid 512, 2x, back-off forced off | 100 % | 62 % | 83.3 / 120 (0.69) |
+    | B | 144 Hz (7.0 ms) | mains, 97 % | grid 128, 1x, run 1 | 0 % | 2.0 % | 60.0 / 60 (1.00) |
+    | B | 144 Hz | mains, 97 % | grid 128, 1x, run 2 | 0 % | 0.6 % | 60.0 / 60 (1.00) |
+    | B | 144 Hz | mains, 97 % | grid 256, 1x | 0 % | 0.3 % | 60.0 / 60 (1.00) |
+    | B | 144 Hz | mains, 97 % | grid 512, 2x, back-off on | 100 % | 34 % | 60.3 / 120 (0.50) |
+    | B | 60 Hz (16.7 ms) | battery, 97 % | grid 128, 1x | 0 % | 0.1 % | 60.0 / 60 (1.00) |
 
-    With the back-off forced off the GPU cannot reach 2x (62 % of frames held back), so the flag is a true positive there; with it
-    on, the occasional hold-back keeps the flag on and the rate is the back-off's 1 step per frame.
+    Acceptance (flag below 10 % at grid 128 at 144 Hz) is met on this machine. With the back-off forced off the GPU cannot reach 2x
+    at grid 512 (62 % of frames held back), so the flag is a true positive there; with it on, the rate is the back-off's 1 step per
+    frame. Under the old rule grid 256 at 144 Hz had the flag on 100 % (M1 report); under the new rule 0 %.
 
 ## Unresolved or unverified
 - **The floating interface on real devices** (decision 36): touch was exercised with synthetic pointer events and an emulated
   390 x 844 phone only; no screen reader was used (the panels have `aria-expanded`/`aria-controls`, tooltips
   `aria-describedby`, the cell readout is `aria-live="off"`). Backdrop blur's cost on a slow GPU is unmeasured; whether to
   default to Solid there waits for a trustworthy GPU-limited flag (see below).
-- **The GPU-limited flag at 144 Hz under the new rule is unmeasured** (decision 7, fact 27). Under the old rule (any held-back
-  frame) it was mostly a false positive on a 144 Hz display (Reported, scratchpad probe, 8 and 9 Nov 2026, the AMD renderer above,
-  Chrome 156 normal window): at grids 64 and 128 the GPU spends about 1 ms per frame (timer query, p50; p90 1.7 to 3.4 ms) of a 7 ms
-  frame interval, but a frame fence signals 1 to 3 frames after submission (presentation latency, not load). With
-  `LOOP.maxFramesInFlight` = 3 frames were held back 12 to 33 % at grid 128 at 57 to 62 steps/s, and the flag was on 23 to 63 %
-  (50 % at grid 64). The new rule (9 Nov 2026) needs a step deficit as well, so those rows should no longer set it, but the live
-  rows in fact 27 ran at 60 Hz, where grid 128 held back no frame at all; the 144 Hz case was not re-measured. Grid 256 looked like
-  real load (GPU p90 8 ms against a 7 ms interval). Also open: at grid 512 and 2x the 1-step back-off itself lowers the rate from
-  83 to 63 steps/s on this machine (fact 27); whether the back-off should allow more than 1 step is an owner decision.
+- **The GPU-limited flag is measured on one machine only** (decision 7, fact 27). Under the old rule (any held-back frame) it was
+  mostly a false positive at 144 Hz (flag on 23 to 63 % at grid 128 with 3 frames in flight; presentation latency, not load).
+  Under the new rule it was 0 % at grids 128 and 256 at 144 Hz on mains power and at grid 128 at 60 Hz on battery. Other GPUs,
+  displays and browsers are untested, as is grid 64 under the new rule. Also open: at grid 512 and 2x the 1-step back-off itself
+  lowers the rate from 83 to 63 steps/s at 60 Hz (fact 27); whether the back-off should allow more than 1 step is an owner decision.
+- **Browser results recorded before 9 Nov 2026 (evening) carry no refresh rate or power state.** From fact 27 run B on, every
+  browser result records both.
 - **Hardware evidence is limited to correctness pages on one machine.** Items 14 to 17 ran on the AMD renderer above. No frame-rate
   or performance figure was taken (the built-in browser pane delivered animation frames at roughly 5 Hz while the pages ran, so
   such numbers would not mean anything), and the `maxTapsPerStep` cap (200M, an estimate) and 2x speed remain untested. A 512 grid
